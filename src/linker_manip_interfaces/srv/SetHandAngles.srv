@@ -1,0 +1,4 @@
+float32[10] angles
+---
+bool success
+string message

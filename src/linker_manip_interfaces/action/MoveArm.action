@@ -1,0 +1,20 @@
+uint8 MODE_JOINT=0
+uint8 MODE_POSE=1
+uint8 MODE_LINEAR=2
+
+uint8 mode
+float64[] target_joints
+linker_manip_interfaces/TcpPose target_pose
+float64[] joint_velocities
+float64[] joint_accelerations
+float64 max_velocity
+float64 max_angular_velocity
+float64 acceleration
+float64 angular_acceleration
+---
+bool success
+string error
+---
+linker_manip_interfaces/TcpPose current_pose
+float32 progress
+string phase

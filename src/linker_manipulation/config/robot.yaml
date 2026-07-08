@@ -1,0 +1,63 @@
+arm:
+  type: A7lite
+  side: right
+  can: can0
+  interface_type: socketcan
+  world_frame: maestro
+  tcp_offset: [0.0, 0.0, 0.0]
+  connect_on_start: true
+  state_rate_hz: 20.0
+  default_joint_velocities: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
+  default_joint_accelerations: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
+
+hand:
+  type: L20lite
+  side: right
+  can: can1
+  interface_type: socketcan
+  connect_on_start: true
+  state_rate_hz: 30.0
+  tactile_rate_hz: 30.0
+  open_angles: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  pregrasp_angles: [85.0, 100.0, 65.0, 65.0, 70.0, 80.0, 100.0, 100.0, 100.0, 80.0]
+  default_speeds: [50.0, 50.0, 45.0, 45.0, 45.0, 45.0, 40.0, 40.0, 40.0, 40.0]
+  default_torques: [45.0, 45.0, 45.0, 45.0, 45.0, 45.0, 35.0, 35.0, 35.0, 35.0]
+  polling:
+    angle: 0.0167
+    force_sensor: 0.0333
+    speed: 0.1
+    torque: 0.1
+    temperature: 1.0
+
+grasp:
+  active_fingers: [thumb, index, middle]
+  baseline_samples: 10
+  contact_threshold: 12.0
+  force_low: 20.0
+  force_high: 45.0
+  close_step: 2.0
+  open_step: 1.0
+  regulate_period_sec: 0.05
+  stable_cycles: 8
+  hold_sec: 5.0
+  slip_drop_ratio: 0.30
+  slip_window_sec: 0.10
+  action_timeout_sec: 75.0
+  max_closed_angles: [28.0, 100.0, 0.0, 0.0, 5.0, 20.0, 100.0, 100.0, 100.0, 70.0]
+  poses:
+    home_pose: [0.0, 0.00, -0.5, 0.0, 0.0, 0.00]
+    pregrasp_pose: [0.0, 0.30, -0.18, 1.85, 0.0, 1.57]
+    grasp_pose: [0.0, 0.30, -0.25, 1.85, 0.0, 1.57]
+    lift_pose: [0.0, 0.30, -0.20, 1.85, 0.0, 1.57]
+    place_pose: [0.10, 0.30, -0.25, 1.85, 0.0, 1.57]
+
+demo:
+  run_once_on_start: false
+  enable_and_home: true
+  record_bag: false
+  bag_dir: bags/grasp_demo
+  record_topics:
+    - /linker/arm/state
+    - /linker/arm/tcp_pose
+    - /linker/hand/state
+    - /linker/hand/tactile
