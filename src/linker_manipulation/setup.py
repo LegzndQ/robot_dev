@@ -12,6 +12,12 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", glob("config/*.yaml")),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
+        (f"share/{package_name}/rviz", glob("rviz/*.rviz")),
+        (f"share/{package_name}/urdf", glob("urdf/*.urdf")),
+        (
+            f"share/{package_name}/urdf/meshes/a7_lite_right",
+            glob("urdf/meshes/a7_lite_right/*"),
+        ),
     ],
     install_requires=["setuptools", "PyYAML"],
     zip_safe=True,
@@ -26,6 +32,7 @@ setup(
             "l20lite_driver_node = linker_manipulation.l20lite_driver_node:main",
             "grasp_controller_node = linker_manipulation.grasp_controller_node:main",
             "demo_task_node = linker_manipulation.demo_task_node:main",
+            "tactile_heatmap_node = linker_manipulation.tactile_heatmap_node:main",
         ],
     },
 )

@@ -43,6 +43,8 @@ grasp:
   slip_drop_ratio: 0.30
   slip_window_sec: 0.10
   action_timeout_sec: 75.0
+  approach_mode: pose
+  approach_waypoints: []
   max_closed_angles: [28.0, 100.0, 0.0, 0.0, 5.0, 20.0, 100.0, 100.0, 100.0, 70.0]
   poses:
     home_pose: [0.0, 0.00, -0.5, 0.0, 0.0, 0.00]
@@ -54,7 +56,7 @@ grasp:
 demo:
   run_once_on_start: false
   enable_and_home: true
-  record_bag: false
+  record_bag: true
   bag_dir: bags/grasp_demo
   record_topics:
     - /linker/arm/state

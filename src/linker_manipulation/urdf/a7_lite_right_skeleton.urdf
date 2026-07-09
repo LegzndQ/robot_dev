@@ -1,0 +1,205 @@
+<?xml version="1.0"?>
+<robot name="a7_lite_right_skeleton">
+  <material name="link_gray">
+    <color rgba="0.65 0.68 0.72 1.0"/>
+  </material>
+  <material name="joint_blue">
+    <color rgba="0.1 0.35 0.9 1.0"/>
+  </material>
+  <material name="tcp_green">
+    <color rgba="0.1 0.8 0.3 1.0"/>
+  </material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.18 0.06"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+  </link>
+
+  <link name="R1_Link">
+    <visual>
+      <origin xyz="0 0 -0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.08 0.16"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.035"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R1_JOINT" type="revolute">
+    <origin xyz="0 -0.1435 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="R1_Link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.75" upper="2.18" effort="60" velocity="18.84"/>
+  </joint>
+
+  <link name="R2_Link">
+    <visual>
+      <origin xyz="0 0 -0.075" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.055 0.07 0.15"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.032"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R2_JOINT" type="revolute">
+    <origin xyz="0.03125 -0.0715 0" rpy="0 0 0"/>
+    <parent link="R1_Link"/>
+    <child link="R2_Link"/>
+    <axis xyz="-1 0 0"/>
+    <limit lower="-0.19" upper="3.33" effort="60" velocity="18.84"/>
+  </joint>
+
+  <link name="R3_Link">
+    <visual>
+      <origin xyz="0 0 -0.065" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.05 0.06 0.13"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.030"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R3_JOINT" type="revolute">
+    <origin xyz="-0.03125 0 -0.147" rpy="0 0 0"/>
+    <parent link="R2_Link"/>
+    <child link="R3_Link"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.26" upper="2.26" effort="17" velocity="37.68"/>
+  </joint>
+
+  <link name="R4_Link">
+    <visual>
+      <origin xyz="0 0 -0.065" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.045 0.055 0.13"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.028"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R4_JOINT" type="revolute">
+    <origin xyz="0 -0.027 -0.126" rpy="0 0 0"/>
+    <parent link="R3_Link"/>
+    <child link="R4_Link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.74" upper="0.78" effort="36" velocity="10.47"/>
+  </joint>
+
+  <link name="R5_Link">
+    <visual>
+      <origin xyz="0 0 -0.045" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.05 0.09"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.026"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R5_JOINT" type="revolute">
+    <origin xyz="0 0.027 -0.136" rpy="0 0 0"/>
+    <parent link="R4_Link"/>
+    <child link="R5_Link"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.96" upper="2.96" effort="14" velocity="27.21"/>
+  </joint>
+
+  <link name="R6_Link">
+    <visual>
+      <origin xyz="0 0 -0.045" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.038 0.045 0.09"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R6_JOINT" type="revolute">
+    <origin xyz="0 -0.028 -0.0435" rpy="0 0 0"/>
+    <parent link="R5_Link"/>
+    <child link="R6_Link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="14" velocity="27.21"/>
+  </joint>
+
+  <link name="R7_Link">
+    <visual>
+      <origin xyz="0 0 -0.04" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.035 0.04 0.08"/>
+      </geometry>
+      <material name="link_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.022"/>
+      </geometry>
+      <material name="joint_blue"/>
+    </visual>
+  </link>
+  <joint name="R7_JOINT" type="revolute">
+    <origin xyz="0.028 0.028 -0.075" rpy="0 0 0"/>
+    <parent link="R6_Link"/>
+    <child link="R7_Link"/>
+    <axis xyz="-1 0 0"/>
+    <limit lower="-1.57" upper="1.57" effort="14" velocity="27.21"/>
+  </joint>
+
+  <link name="tcp_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.025"/>
+      </geometry>
+      <material name="tcp_green"/>
+    </visual>
+  </link>
+  <joint name="tcp_fixed_joint" type="fixed">
+    <origin xyz="0 0 -0.08" rpy="0 0 0"/>
+    <parent link="R7_Link"/>
+    <child link="tcp_link"/>
+  </joint>
+</robot>

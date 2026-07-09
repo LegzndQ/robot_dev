@@ -5,6 +5,7 @@ from typing import Any
 
 import rclpy
 from rclpy.action import ActionServer
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
@@ -28,6 +29,8 @@ class A7DriverNode(Node):
         self._lock = threading.RLock()
         self._arm: Any | None = None
         self._last_pose = TcpPose()
+        self._motion_callback_group = MutuallyExclusiveCallbackGroup()
+        self._state_stop_event = threading.Event()
 
         self._joint_pub = self.create_publisher(JointState, "/linker/arm/state", 10)
         self._pose_pub = self.create_publisher(TcpPose, "/linker/arm/tcp_pose", 10)
@@ -42,13 +45,38 @@ class A7DriverNode(Node):
             MoveArm,
             "/linker/arm/move_arm",
             execute_callback=self._execute_move_arm,
+            callback_group=self._motion_callback_group,
         )
 
         period = 1.0 / max(1.0, self._cfg.state_rate_hz)
-        self.create_timer(period, self._publish_state)
+        self._state_thread = threading.Thread(
+            target=self._state_publish_loop,
+            args=(period,),
+            daemon=True,
+        )
+        self._state_thread.start()
 
         if self._cfg.connect_on_start:
             self._connect()
+
+    def _joint_names(self) -> list[str]:
+        arm_type = self._cfg.type.lower().replace("_", "")
+        if arm_type == "a7lite":
+            prefix = "L" if self._cfg.side == "left" else "R"
+            return [f"{prefix}{i}_JOINT" for i in range(1, 8)]
+        if self._cfg.side == "left":
+            prefix = "Left"
+        else:
+            prefix = "Right"
+        return [
+            f"{prefix}_Shoulder_Pitch_Joint",
+            f"{prefix}_Shoulder_Roll_Joint",
+            f"{prefix}_Shoulder_Yaw_Joint",
+            f"{prefix}_Elbow_Pitch_Joint",
+            f"{prefix}_Wrist_Yaw_Joint",
+            f"{prefix}_Wrist_Pitch_Joint",
+            f"{prefix}_Wrist_Roll_Joint",
+        ]
 
     def _connect(self) -> bool:
         with self._lock:
@@ -206,29 +234,35 @@ class A7DriverNode(Node):
             return result
 
     def _publish_state(self) -> None:
-        with self._lock:
-            arm = self._arm
-            if arm is None:
-                return
-            try:
-                state = arm.get_state()
-                stamp = self.get_clock().now().to_msg()
+        arm = self._arm
+        if arm is None:
+            return
+        try:
+            state = arm.get_state()
+            stamp = self.get_clock().now().to_msg()
 
-                joint_state = JointState()
-                joint_state.header.stamp = stamp
-                joint_state.name = [f"a7_joint_{i + 1}" for i in range(7)]
-                joint_state.position = [float(v.angle) for v in state.joint_angles]
-                joint_state.velocity = [float(v.velocity) for v in state.joint_velocities]
-                joint_state.effort = [float(v.torque) for v in state.joint_torques]
-                self._joint_pub.publish(joint_state)
+            joint_state = JointState()
+            joint_state.header.stamp = stamp
+            joint_state.name = self._joint_names()
+            joint_state.position = [float(v.angle) for v in state.joint_angles]
+            joint_state.velocity = [float(v.velocity) for v in state.joint_velocities]
+            joint_state.effort = [float(v.torque) for v in state.joint_torques]
+            self._joint_pub.publish(joint_state)
 
-                pose_msg = pose_msg_from_sdk_pose(state.pose)
-                self._last_pose = pose_msg
-                self._pose_pub.publish(pose_msg)
-            except Exception as exc:
-                self.get_logger().warn(f"Failed to publish {self._cfg.type} state: {exc}")
+            pose_msg = pose_msg_from_sdk_pose(state.pose)
+            self._last_pose = pose_msg
+            self._pose_pub.publish(pose_msg)
+        except Exception as exc:
+            self.get_logger().warn(f"Failed to publish {self._cfg.type} state: {exc}")
+
+    def _state_publish_loop(self, period: float) -> None:
+        while not self._state_stop_event.wait(period):
+            self._publish_state()
 
     def destroy_node(self) -> bool:
+        self._state_stop_event.set()
+        if self._state_thread.is_alive():
+            self._state_thread.join(timeout=2.0)
         with self._lock:
             if self._arm is not None:
                 try:
@@ -243,7 +277,7 @@ class A7DriverNode(Node):
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = A7DriverNode()
-    executor = MultiThreadedExecutor()
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
         executor.spin()

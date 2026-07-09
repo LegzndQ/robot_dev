@@ -300,6 +300,14 @@ class GraspControllerNode(Node):
         goal.target_pose = pose_msg_from_list(self._grasp_cfg.poses[pose_name])
         return goal
 
+    def _approach_mode(self) -> int:
+        mode = self._grasp_cfg.approach_mode
+        if mode == "linear":
+            return MoveArm.Goal.MODE_LINEAR
+        if mode == "pose":
+            return MoveArm.Goal.MODE_POSE
+        raise ValueError("grasp.approach_mode must be 'linear' or 'pose'")
+
     def _move_arm(
         self,
         goal: MoveArm.Goal,
@@ -353,6 +361,22 @@ class GraspControllerNode(Node):
             self._publish_feedback(goal_handle, "hold", 0.80)
             time.sleep(self._grasp_cfg.regulate_period_sec)
 
+    def _move_to_pregrasp(self, goal_handle, timeout_sec: float) -> None:
+        for index, pose_name in enumerate(self._grasp_cfg.approach_waypoints):
+            self._move_arm(
+                self._make_pose_goal(MoveArm.Goal.MODE_POSE, pose_name),
+                timeout_sec,
+                f"approach_waypoint_{index + 1}:{pose_name}",
+                goal_handle,
+            )
+
+        self._move_arm(
+            self._make_pose_goal(self._approach_mode(), "pregrasp_pose"),
+            timeout_sec,
+            "approach",
+            goal_handle,
+        )
+
     def _execute_grasp(self, goal_handle):
         request = goal_handle.request
         result = Grasp.Result()
@@ -373,12 +397,7 @@ class GraspControllerNode(Node):
             self._calibrate_baseline(self._grasp_cfg.baseline_samples)
 
             self._publish_feedback(goal_handle, "approach", 0.15)
-            self._move_arm(
-                self._make_pose_goal(MoveArm.Goal.MODE_POSE, "pregrasp_pose"),
-                timeout_sec,
-                "approach",
-                goal_handle,
-            )
+            self._move_to_pregrasp(goal_handle, timeout_sec)
 
             self._publish_feedback(goal_handle, "pregrasp", 0.25)
             self._set_angles(self._hand_cfg.pregrasp_angles)

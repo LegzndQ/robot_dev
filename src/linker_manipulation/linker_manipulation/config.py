@@ -64,6 +64,8 @@ class GraspConfig:
     slip_drop_ratio: float = 0.30
     slip_window_sec: float = 0.10
     action_timeout_sec: float = 20.0
+    approach_mode: str = "linear"
+    approach_waypoints: list[str] = field(default_factory=list)
     max_closed_angles: list[float] = field(
         default_factory=lambda: [28.0, 100.0, 0.0, 0.0, 5.0, 20.0, 100.0, 100.0, 100.0, 70.0]
     )
@@ -151,6 +153,10 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
         slip_drop_ratio=float(grasp_raw.get("slip_drop_ratio", 0.30)),
         slip_window_sec=float(grasp_raw.get("slip_window_sec", 0.10)),
         action_timeout_sec=float(grasp_raw.get("action_timeout_sec", 20.0)),
+        approach_mode=str(grasp_raw.get("approach_mode", "linear")).lower(),
+        approach_waypoints=[
+            str(name) for name in (grasp_raw.get("approach_waypoints", []) or [])
+        ],
         max_closed_angles=_as_float_list(grasp_raw.get("max_closed_angles", [0.0] * 10), 10),
         poses=poses,
     )
