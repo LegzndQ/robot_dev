@@ -462,6 +462,23 @@ trajectory_joint_acceleration: 1.0
 
 如果需要最严格贴合 MoveIt 轨迹，可把 `trajectory_execution_mode` 设为 `all`，但真机可能出现明显停顿；如果只想最顺滑地到目标，可设为 `final`，但会弱化 MoveIt 路径避障约束。第一次真机执行前请保持低速、手在急停附近，并先在 RViz 中确认整条轨迹不穿过桌子或自身模型。
 
+## ros2_control Trajectory Controller
+
+仓库同时提供标准 `ros2_control` 链路，用于接入 `joint_trajectory_controller`：
+
+```bash
+ros2 launch linker_manipulation ros2_control_moveit.launch.py allow_execution:=true
+```
+
+这条链路会启动：
+
+- `controller_manager`
+- `joint_state_broadcaster`
+- `a7_arm_controller`
+- MoveIt controller `/a7_arm_controller/follow_joint_trajectory`
+
+当前 URDF 中的 `<ros2_control>` 使用 `mock_components/GenericSystem`，适合验证 MoveIt -> `joint_trajectory_controller` 的标准轨迹接口和 RViz 执行流程，不会驱动真实 A7lite。真实硬件层建议基于 linker-bot 的 `linkerhand-tele-arm` C++ 代码实现 `hardware_interface::SystemInterface`，把 `read()` 映射到 A7 关节状态，把 `write()` 映射到 A7 CAN/SDK 位置命令。
+
 ## Public Interfaces
 
 主要话题：

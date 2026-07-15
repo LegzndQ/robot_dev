@@ -348,4 +348,59 @@
     <child link="hand_collision_proxy" />
   </joint>
 
+  <ros2_control name="A7LiteRightSystem" type="system">
+    <hardware>
+      <plugin>mock_components/GenericSystem</plugin>
+    </hardware>
+    <joint name="R1_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R2_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R3_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R4_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R5_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R6_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="R7_JOINT">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+  </ros2_control>
+
 </robot>

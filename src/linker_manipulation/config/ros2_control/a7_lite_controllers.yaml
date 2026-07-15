@@ -1,0 +1,160 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    a7_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+/joint_state_broadcaster:
+  ros__parameters:
+    use_local_topics: false
+
+/a7_arm_controller:
+  ros__parameters:
+    joints:
+      - R1_JOINT
+      - R2_JOINT
+      - R3_JOINT
+      - R4_JOINT
+      - R5_JOINT
+      - R6_JOINT
+      - R7_JOINT
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    allow_integration_in_goal_trajectories: true
+    action_monitor_rate: 20.0
+    interpolation_method: splines
+
+    constraints:
+      goal_time: 1.0
+      stopped_velocity_tolerance: 0.05
+      R1_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R2_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R3_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R4_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R5_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R6_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R7_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+
+/controller_manager/a7_arm_controller:
+  ros__parameters:
+    joints:
+      - R1_JOINT
+      - R2_JOINT
+      - R3_JOINT
+      - R4_JOINT
+      - R5_JOINT
+      - R6_JOINT
+      - R7_JOINT
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    allow_integration_in_goal_trajectories: true
+    action_monitor_rate: 20.0
+    interpolation_method: splines
+
+    constraints:
+      goal_time: 1.0
+      stopped_velocity_tolerance: 0.05
+      R1_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R2_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R3_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R4_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R5_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R6_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R7_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+
+/**:
+  ros__parameters:
+    joints:
+      - R1_JOINT
+      - R2_JOINT
+      - R3_JOINT
+      - R4_JOINT
+      - R5_JOINT
+      - R6_JOINT
+      - R7_JOINT
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    allow_integration_in_goal_trajectories: true
+    action_monitor_rate: 20.0
+    interpolation_method: splines
+
+    constraints:
+      goal_time: 1.0
+      stopped_velocity_tolerance: 0.05
+      R1_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R2_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R3_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R4_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R5_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R6_JOINT:
+        trajectory: 0.4
+        goal: 0.05
+      R7_JOINT:
+        trajectory: 0.4
+        goal: 0.05
