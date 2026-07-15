@@ -19,6 +19,23 @@ def _as_pose(value: Any) -> list[float]:
     return _as_float_list(value, 6)
 
 
+def _default_arm_joint_names(arm_type: str, side: str) -> list[str]:
+    normalized = arm_type.lower().replace("_", "")
+    if normalized == "a7lite":
+        prefix = "L" if side == "left" else "R"
+        return [f"{prefix}{index}_JOINT" for index in range(1, 8)]
+    prefix = "Left" if side == "left" else "Right"
+    return [
+        f"{prefix}_Shoulder_Pitch_Joint",
+        f"{prefix}_Shoulder_Roll_Joint",
+        f"{prefix}_Shoulder_Yaw_Joint",
+        f"{prefix}_Elbow_Pitch_Joint",
+        f"{prefix}_Wrist_Yaw_Joint",
+        f"{prefix}_Wrist_Pitch_Joint",
+        f"{prefix}_Wrist_Roll_Joint",
+    ]
+
+
 def _hand_model_defaults(hand_type: str) -> dict[str, Any]:
     normalized = hand_type.lower()
     if normalized == "o6":
@@ -122,11 +139,19 @@ class DemoConfig:
 
 
 @dataclass(frozen=True)
+class MoveItConfig:
+    joint_names: list[str] = field(default_factory=list)
+    joint_tolerance: float = 0.03
+    joint_targets: dict[str, list[float]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RobotConfig:
     arm: ArmConfig
     hand: HandConfig
     grasp: GraspConfig
     demo: DemoConfig
+    moveit: MoveItConfig
 
 
 def default_config_path() -> Path:
@@ -142,6 +167,7 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
     hand_raw = raw.get("hand", {})
     grasp_raw = raw.get("grasp", {})
     demo_raw = raw.get("demo", {})
+    moveit_raw = raw.get("moveit", {})
 
     arm = ArmConfig(
         type=str(arm_raw.get("type", "A7")),
@@ -230,4 +256,21 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
         record_topics=[str(topic) for topic in demo_raw.get("record_topics", [])],
     )
 
-    return RobotConfig(arm=arm, hand=hand, grasp=grasp, demo=demo)
+    default_joint_names = _default_arm_joint_names(arm.type, arm.side)
+    joint_names = [
+        str(name) for name in moveit_raw.get("joint_names", default_joint_names)
+    ]
+    if len(joint_names) != 7:
+        raise ValueError(f"moveit.joint_names must contain 7 joints, got {len(joint_names)}")
+    joint_targets = {
+        str(name): _as_float_list(values, len(joint_names))
+        for name, values in (moveit_raw.get("joint_targets", {}) or {}).items()
+    }
+    joint_targets.setdefault("home", [0.0] * len(joint_names))
+    moveit = MoveItConfig(
+        joint_names=joint_names,
+        joint_tolerance=float(moveit_raw.get("joint_tolerance", 0.03)),
+        joint_targets=joint_targets,
+    )
+
+    return RobotConfig(arm=arm, hand=hand, grasp=grasp, demo=demo, moveit=moveit)

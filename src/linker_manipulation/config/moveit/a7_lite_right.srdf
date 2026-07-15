@@ -20,6 +20,46 @@
     <joint name="R7_JOINT" value="0" />
   </group_state>
 
+  <group_state name="pregrasp" group="a7_lite_arm">
+    <joint name="R1_JOINT" value="-0.464362" />
+    <joint name="R2_JOINT" value="0.477021" />
+    <joint name="R3_JOINT" value="0.638905" />
+    <joint name="R4_JOINT" value="-1.599853" />
+    <joint name="R5_JOINT" value="1.012543" />
+    <joint name="R6_JOINT" value="0.573691" />
+    <joint name="R7_JOINT" value="0.115659" />
+  </group_state>
+
+  <group_state name="grasp" group="a7_lite_arm">
+    <joint name="R1_JOINT" value="-0.431371" />
+    <joint name="R2_JOINT" value="0.455155" />
+    <joint name="R3_JOINT" value="0.643125" />
+    <joint name="R4_JOINT" value="-1.513540" />
+    <joint name="R5_JOINT" value="0.990678" />
+    <joint name="R6_JOINT" value="0.538016" />
+    <joint name="R7_JOINT" value="0.223837" />
+  </group_state>
+
+  <group_state name="lift" group="a7_lite_arm">
+    <joint name="R1_JOINT" value="-0.464746" />
+    <joint name="R2_JOINT" value="0.477789" />
+    <joint name="R3_JOINT" value="0.640056" />
+    <joint name="R4_JOINT" value="-1.599853" />
+    <joint name="R5_JOINT" value="1.011776" />
+    <joint name="R6_JOINT" value="0.574459" />
+    <joint name="R7_JOINT" value="0.116043" />
+  </group_state>
+
+  <group_state name="place" group="a7_lite_arm">
+    <joint name="R1_JOINT" value="-0.430604" />
+    <joint name="R2_JOINT" value="0.727520" />
+    <joint name="R3_JOINT" value="0.497736" />
+    <joint name="R4_JOINT" value="-1.486304" />
+    <joint name="R5_JOINT" value="0.756674" />
+    <joint name="R6_JOINT" value="0.303245" />
+    <joint name="R7_JOINT" value="0.257979" />
+  </group_state>
+
   <disable_collisions link1="base_link" link2="R_arm_root" reason="Adjacent" />
   <disable_collisions link1="R_arm_root" link2="R1_Link" reason="Adjacent" />
   <disable_collisions link1="R1_Link" link2="R2_Link" reason="Adjacent" />

@@ -1,8 +1,8 @@
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 moveit_simple_controller_manager:
   controller_names:
-    - fake_arm_controller
-  fake_arm_controller:
+    - linker_arm_controller
+  linker_arm_controller:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     default: true

@@ -66,3 +66,13 @@ demo:
     - /linker/arm/tcp_pose
     - /linker/hand/state
     - /linker/hand/tactile
+
+moveit:
+  joint_names: [R1_JOINT, R2_JOINT, R3_JOINT, R4_JOINT, R5_JOINT, R6_JOINT, R7_JOINT]
+  joint_tolerance: 0.03
+  joint_targets:
+    home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    pregrasp: [-0.464362, 0.477021, 0.638905, -1.599853, 1.012543, 0.573691, 0.115659]
+    grasp: [-0.431371, 0.455155, 0.643125, -1.513540, 0.990678, 0.538016, 0.223837]
+    lift: [-0.464746, 0.477789, 0.640056, -1.599853, 1.011776, 0.574459, 0.116043]
+    place: [-0.430604, 0.727520, 0.497736, -1.486304, 0.756674, 0.303245, 0.257979]

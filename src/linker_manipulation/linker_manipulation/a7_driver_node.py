@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from control_msgs.action import FollowJointTrajectory
 import rclpy
 from rclpy.action import ActionServer
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -10,6 +11,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
+from trajectory_msgs.msg import JointTrajectoryPoint
 
 from linker_manip_interfaces.action import MoveArm
 from linker_manip_interfaces.msg import TcpPose
@@ -23,6 +25,11 @@ class A7DriverNode(Node):
     def __init__(self) -> None:
         super().__init__("a7_driver")
         self.declare_parameter("config_path", "")
+        self.declare_parameter("trajectory_execution_mode", "sparse")
+        self.declare_parameter("trajectory_min_waypoint_delta", 0.06)
+        self.declare_parameter("trajectory_max_waypoints", 25)
+        self.declare_parameter("trajectory_joint_velocity", 0.20)
+        self.declare_parameter("trajectory_joint_acceleration", 1.0)
         config_path = self.get_parameter("config_path").get_parameter_value().string_value
         self._cfg: ArmConfig = load_robot_config(config_path or None).arm
 
@@ -45,6 +52,13 @@ class A7DriverNode(Node):
             MoveArm,
             "/linker/arm/move_arm",
             execute_callback=self._execute_move_arm,
+            callback_group=self._motion_callback_group,
+        )
+        self._trajectory_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            "/linker_arm_controller/follow_joint_trajectory",
+            execute_callback=self._execute_follow_joint_trajectory,
             callback_group=self._motion_callback_group,
         )
 
@@ -231,6 +245,203 @@ class A7DriverNode(Node):
             goal_handle.abort()
             result.success = False
             result.error = str(exc)
+            return result
+
+    def _ordered_values(
+        self,
+        values: list[float] | tuple[float, ...],
+        order: list[int],
+    ) -> list[float]:
+        return [float(values[index]) for index in order]
+
+    def _current_joint_positions(self) -> list[float]:
+        arm = self._arm
+        if arm is None:
+            return []
+        state = arm.get_state()
+        return [float(v.angle) for v in state.joint_angles]
+
+    def _joint_distance(self, first: list[float], second: list[float]) -> float:
+        return max(abs(a - b) for a, b in zip(first, second))
+
+    def _downsample_targets(
+        self,
+        targets: list[list[float]],
+        max_waypoints: int,
+    ) -> list[list[float]]:
+        if max_waypoints <= 0 or len(targets) <= max_waypoints:
+            return targets
+        if max_waypoints == 1:
+            return [targets[-1]]
+
+        last_index = len(targets) - 1
+        selected: list[list[float]] = []
+        for output_index in range(max_waypoints):
+            source_index = round(output_index * last_index / (max_waypoints - 1))
+            selected.append(targets[source_index])
+        return selected
+
+    def _select_trajectory_targets(
+        self,
+        points: list[JointTrajectoryPoint],
+        order: list[int],
+        joint_count: int,
+    ) -> list[list[float]]:
+        all_targets: list[list[float]] = []
+        for point_index, point in enumerate(points):
+            if len(point.positions) != joint_count:
+                raise ValueError(
+                    f"Point {point_index} has {len(point.positions)} positions, "
+                    f"expected {joint_count}"
+                )
+            all_targets.append(self._ordered_values(point.positions, order))
+
+        mode = str(self.get_parameter("trajectory_execution_mode").value).lower()
+        if mode in ("final", "final_only"):
+            return [all_targets[-1]]
+        if mode == "all":
+            return all_targets
+        if mode != "sparse":
+            raise ValueError(
+                "trajectory_execution_mode must be one of: sparse, all, final"
+            )
+
+        min_delta = float(self.get_parameter("trajectory_min_waypoint_delta").value)
+        max_waypoints = int(self.get_parameter("trajectory_max_waypoints").value)
+        selected: list[list[float]] = []
+        last_selected: list[float] | None = None
+
+        # MoveIt trajectories usually include the current state as the first point.
+        # Skip tiny consecutive changes so the SDK does not stop/start at every sample.
+        for target in all_targets[:-1]:
+            if last_selected is None:
+                last_selected = target
+                continue
+            if self._joint_distance(last_selected, target) >= min_delta:
+                selected.append(target)
+                last_selected = target
+
+        final_target = all_targets[-1]
+        if not selected or self._joint_distance(selected[-1], final_target) > 1e-6:
+            selected.append(final_target)
+
+        return self._downsample_targets(selected, max_waypoints)
+
+    def _trajectory_limits(self) -> tuple[list[float], list[float]]:
+        velocity = float(self.get_parameter("trajectory_joint_velocity").value)
+        acceleration = float(self.get_parameter("trajectory_joint_acceleration").value)
+        velocities = (
+            [velocity] * 7
+            if velocity > 0.0
+            else [float(v) for v in self._cfg.default_joint_velocities]
+        )
+        accelerations = (
+            [acceleration] * 7
+            if acceleration > 0.0
+            else [float(v) for v in self._cfg.default_joint_accelerations]
+        )
+        return velocities, accelerations
+
+    def _publish_trajectory_feedback(
+        self,
+        goal_handle,
+        joint_names: list[str],
+        desired_positions: list[float],
+    ) -> None:
+        feedback = FollowJointTrajectory.Feedback()
+        feedback.header.stamp = self.get_clock().now().to_msg()
+        feedback.joint_names = joint_names
+
+        desired = JointTrajectoryPoint()
+        desired.positions = desired_positions
+        feedback.desired = desired
+
+        try:
+            current_positions = self._current_joint_positions()
+        except Exception:
+            current_positions = []
+        if len(current_positions) == len(desired_positions):
+            actual = JointTrajectoryPoint()
+            actual.positions = current_positions
+            feedback.actual = actual
+
+            error = JointTrajectoryPoint()
+            error.positions = [
+                float(actual_pos - desired_pos)
+                for actual_pos, desired_pos in zip(current_positions, desired_positions)
+            ]
+            feedback.error = error
+
+        goal_handle.publish_feedback(feedback)
+
+    def _execute_follow_joint_trajectory(self, goal_handle):
+        result = FollowJointTrajectory.Result()
+        goal = goal_handle.request
+        trajectory = goal.trajectory
+        expected_joint_names = self._joint_names()
+
+        try:
+            if not trajectory.points:
+                raise ValueError("Trajectory has no points")
+
+            missing = [
+                joint_name
+                for joint_name in expected_joint_names
+                if joint_name not in trajectory.joint_names
+            ]
+            if missing:
+                result.error_code = FollowJointTrajectory.Result.INVALID_JOINTS
+                result.error_string = f"Trajectory missing joints: {missing}"
+                goal_handle.abort()
+                return result
+
+            order = [
+                trajectory.joint_names.index(joint_name)
+                for joint_name in expected_joint_names
+            ]
+
+            with self._lock:
+                arm = self._require_arm()
+                velocities, accelerations = self._trajectory_limits()
+                arm.set_velocities(velocities)
+                arm.set_accelerations(accelerations)
+
+                targets = self._select_trajectory_targets(
+                    trajectory.points,
+                    order,
+                    len(trajectory.joint_names),
+                )
+                self.get_logger().info(
+                    "Executing MoveIt trajectory with "
+                    f"{len(targets)}/{len(trajectory.points)} waypoints "
+                    f"(mode={self.get_parameter('trajectory_execution_mode').value}, "
+                    f"velocity={velocities[0]:.3f}, acceleration={accelerations[0]:.3f})"
+                )
+
+                for target in targets:
+                    if goal_handle.is_cancel_requested:
+                        arm.emergency_stop()
+                        result.error_code = FollowJointTrajectory.Result.PATH_TOLERANCE_VIOLATED
+                        result.error_string = "Trajectory execution canceled; emergency stop sent"
+                        goal_handle.canceled()
+                        return result
+
+                    self._publish_trajectory_feedback(
+                        goal_handle,
+                        expected_joint_names,
+                        target,
+                    )
+                    arm.move_j(target, blocking=True)
+
+            result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+            result.error_string = ""
+            goal_handle.succeed()
+            return result
+        except Exception as exc:
+            self.get_logger().error(f"FollowJointTrajectory failed: {exc}")
+            result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+            result.error_string = str(exc)
+            goal_handle.abort()
             return result
 
     def _publish_state(self) -> None:

@@ -35,6 +35,7 @@ def generate_launch_description():
     srdf_path = LaunchConfiguration("srdf_path")
     rviz_config = LaunchConfiguration("rviz_config")
     use_rviz = LaunchConfiguration("use_rviz")
+    allow_execution = LaunchConfiguration("allow_execution")
 
     robot_description = {
         "robot_description": ParameterValue(Command(["cat ", urdf_path]), value_type=str)
@@ -59,7 +60,10 @@ def generate_launch_description():
     )
 
     moveit_common = {
-        "allow_trajectory_execution": False,
+        "allow_trajectory_execution": ParameterValue(
+            allow_execution,
+            value_type=bool,
+        ),
         "capabilities": "",
         "disable_capabilities": "",
         "planning_scene_monitor_options": {
@@ -96,6 +100,13 @@ def generate_launch_description():
                 "use_rviz",
                 default_value="true",
                 description="Start RViz2 with MoveIt planning scene.",
+            ),
+            DeclareLaunchArgument(
+                "allow_execution",
+                default_value="false",
+                description=(
+                    "Allow MoveIt to send planned trajectories to the A7 SDK bridge."
+                ),
             ),
             Node(
                 package="robot_state_publisher",

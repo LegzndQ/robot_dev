@@ -66,3 +66,9 @@ demo:
     - /linker/arm/tcp_pose
     - /linker/hand/state
     - /linker/hand/tactile
+
+moveit:
+  joint_names: [R1_JOINT, R2_JOINT, R3_JOINT, R4_JOINT, R5_JOINT, R6_JOINT, R7_JOINT]
+  joint_tolerance: 0.03
+  joint_targets:
+    home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

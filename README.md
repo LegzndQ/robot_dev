@@ -390,11 +390,53 @@ ros2 launch linker_manipulation moveit_table.launch.py
 ros2 launch linker_manipulation moveit_table.launch.py use_rviz:=false
 ```
 
+允许 MoveIt2 将规划轨迹下发到 A7lite SDK 执行桥：
+
+```bash
+ros2 launch linker_manipulation bringup.launch.py
+ros2 launch linker_manipulation moveit_table.launch.py allow_execution:=true
+```
+
+推荐使用关节目标作为 MoveIt2 的 goal state。先把机械臂示教或移动到目标位姿，然后记录当前 7 个关节角：
+
+```bash
+ros2 run linker_manipulation joint_target_recorder_node --ros-args \
+  -p target_name:=pregrasp
+```
+
+把输出粘到 `robot.yaml` 的 `moveit.joint_targets` 下，例如：
+
+```yaml
+moveit:
+  joint_targets:
+    pregrasp: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+```
+
+然后让 MoveIt2 规划到这个关节目标。默认只规划，不执行：
+
+```bash
+ros2 run linker_manipulation moveit_goal_node --ros-args \
+  -p goal_type:=joint \
+  -p joint_target_name:=pregrasp
+```
+
+确认 RViz 中轨迹安全后，再允许执行：
+
+```bash
+ros2 run linker_manipulation moveit_goal_node --ros-args \
+  -p goal_type:=joint \
+  -p joint_target_name:=pregrasp \
+  -p execute:=true
+```
+
+`moveit_goal_node` 也支持 `goal_type:=pose`，可以直接读取 `robot.yaml` 里的 `pregrasp_pose` 等 TCP 位姿；但 Pose goal 依赖 URDF/KDL IK 和坐标系语义完全一致，调试初期不如关节目标稳定。
+
 这个 launch 会启动：
 
 - `robot_state_publisher`
 - `move_group`
 - 可选 `rviz2`
+- MoveIt controller `linker_arm_controller`
 
 并将 MoveIt 的 `joint_states` remap 到：
 
@@ -402,7 +444,23 @@ ros2 launch linker_manipulation moveit_table.launch.py use_rviz:=false
 /linker/arm/state
 ```
 
-当前 MoveIt2 配置用于规划和碰撞检查，默认 `allow_trajectory_execution=false`，不会直接控制真实机械臂。执行到硬件前，需要先确认规划轨迹安全，再接入轨迹到 SDK `move_j` waypoint 的执行层。
+默认 `allow_trajectory_execution=false`，只做规划和碰撞检查；显式设置 `allow_execution:=true` 后，MoveIt 会通过标准 `FollowJointTrajectory` action：
+
+```text
+/linker_arm_controller/follow_joint_trajectory
+```
+
+把关节轨迹交给 `a7_driver_node`，再由 driver 调用 SDK `move_j`。默认执行桥会把 MoveIt 的密集轨迹抽稀成关键 waypoint，避免真机在每个采样点反复停顿：
+
+```text
+trajectory_execution_mode: sparse
+trajectory_min_waypoint_delta: 0.06
+trajectory_max_waypoints: 25
+trajectory_joint_velocity: 0.20
+trajectory_joint_acceleration: 1.0
+```
+
+如果需要最严格贴合 MoveIt 轨迹，可把 `trajectory_execution_mode` 设为 `all`，但真机可能出现明显停顿；如果只想最顺滑地到目标，可设为 `final`，但会弱化 MoveIt 路径避障约束。第一次真机执行前请保持低速、手在急停附近，并先在 RViz 中确认整条轨迹不穿过桌子或自身模型。
 
 ## Public Interfaces
 
