@@ -1,1 +1,1 @@
-"""ROS2 nodes for A7 + L20 Lite tactile manipulation."""
+"""ROS2 nodes for A7 + LinkerHand tactile manipulation."""

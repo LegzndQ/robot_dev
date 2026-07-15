@@ -11,19 +11,19 @@ arm:
   default_joint_accelerations: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
 
 hand:
-  type: O6
+  type: L20lite
   side: right
   can: can1
   interface_type: socketcan
-  joint_count: 6
-  tactile_shape: [10, 4]
+  joint_count: 10
+  tactile_shape: [12, 6]
   connect_on_start: true
   state_rate_hz: 30.0
   tactile_rate_hz: 30.0
-  open_angles: [100.0, 50.0, 100.0, 100.0, 100.0, 100.0]
-  pregrasp_angles: [85.0, 45.0, 70.0, 70.0, 75.0, 80.0]
-  default_speeds: [50.0, 50.0, 45.0, 45.0, 45.0, 45.0]
-  default_torques: [45.0, 45.0, 45.0, 45.0, 45.0, 45.0]
+  open_angles: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  pregrasp_angles: [85.0, 100.0, 65.0, 65.0, 70.0, 80.0, 100.0, 100.0, 100.0, 80.0]
+  default_speeds: [50.0, 50.0, 45.0, 45.0, 45.0, 45.0, 40.0, 40.0, 40.0, 40.0]
+  default_torques: [45.0, 45.0, 45.0, 45.0, 45.0, 45.0, 35.0, 35.0, 35.0, 35.0]
   polling:
     angle: 0.0167
     force_sensor: 0.0333
@@ -47,7 +47,7 @@ grasp:
   action_timeout_sec: 75.0
   approach_mode: pose
   approach_waypoints: [safe_above_table_pose]
-  max_closed_angles: [30.0, 35.0, 0.0, 0.0, 5.0, 20.0]
+  max_closed_angles: [28.0, 100.0, 0.0, 0.0, 5.0, 20.0, 100.0, 100.0, 100.0, 70.0]
   poses:
     home_pose: [0.0, 0.00, -0.5, 0.0, 0.0, 0.00]
     safe_above_table_pose: [0.0, 0.30, -0.18, 1.85, 0.0, 1.57]

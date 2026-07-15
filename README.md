@@ -1,10 +1,10 @@
-# Linker A7 Lite + L20 Lite Tactile Grasp
+# Linker A7 Lite + LinkerHand Tactile Grasp
 
 ![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420)
 ![License](https://img.shields.io/badge/License-Apache--2.0-green)
 
-基于 ROS2 Humble 的 Linker A7/A7 Lite 机械臂 + L20 Lite 灵巧手触觉抓取工程。
+基于 ROS2 Humble 的 Linker A7/A7 Lite 机械臂 + LinkerHand 灵巧手触觉抓取工程。
 
 当前目标是先跑通一个固定工位、无视觉的稳定抓取闭环：
 
@@ -17,7 +17,7 @@ approach -> tactile close -> force regulate -> lift -> place -> release
 ## Highlights
 
 - A7/A7 Lite 机械臂 ROS2 driver
-- L20 Lite 灵巧手 ROS2 driver
+- O6 / L20 Lite 灵巧手 ROS2 driver
 - `MoveArm.action`：关节、位姿、直线运动
 - `Grasp.action`：接触检测、力度闭环、滑移保护
 - YAML 配置固定工位 demo 位姿
@@ -32,7 +32,7 @@ approach -> tactile close -> force regulate -> lift -> place -> release
 | 系统 | Ubuntu 22.04 |
 | ROS | ROS2 Humble |
 | 机械臂 | 右臂 `A7lite` |
-| 灵巧手 | 右手 `L20lite` |
+| 灵巧手 | 右手 `O6`，可切换 `L20lite` |
 | Arm CAN | `can0`, 1 Mbps |
 | Hand CAN | `can1`, 1 Mbps |
 | 坐标系 | `maestro` |
@@ -53,7 +53,7 @@ src/
       visualize.launch.py
     linker_manipulation/
       a7_driver_node.py
-      l20lite_driver_node.py
+      l20lite_driver_node.py   # generic hand driver entry, supports O6 / L20 Lite
       grasp_controller_node.py
       demo_task_node.py
       tactile_heatmap_node.py
@@ -147,7 +147,7 @@ ros2 launch linker_manipulation bringup.launch.py
 
 ```text
 Connected A7lite right arm on can0 (maestro frame).
-Connected L20 Lite right hand on can1.
+Connected O6 right hand on can1.
 ```
 
 ## Configuration
@@ -168,20 +168,24 @@ arm:
   world_frame: maestro
 
 hand:
-  type: L20lite
+  type: O6
   side: right
   can: can1
+  joint_count: 6
+  tactile_shape: [10, 4]
 
 grasp:
   active_fingers: [thumb, index, middle]
   force_low: 20.0
   force_high: 45.0
   approach_mode: pose
+  approach_waypoints: [safe_above_table_pose]
   poses:
-    pregrasp_pose: [0.0, 0.30, -0.18, 1.85, 0.0, 1.57]
-    grasp_pose: [0.0, 0.30, -0.25, 1.85, 0.0, 1.57]
-    lift_pose: [0.0, 0.30, -0.20, 1.85, 0.0, 1.57]
-    place_pose: [0.10, 0.30, -0.25, 1.85, 0.0, 1.57]
+    safe_above_table_pose: [0.0, 0.20, -0.12, 1.85, 0.0, 1.57]
+    pregrasp_pose: [0.0, 0.30, -0.15, 1.85, 0.0, 1.57]
+    grasp_pose: [0.0, 0.30, -0.21, 1.85, 0.0, 1.57]
+    lift_pose: [0.0, 0.30, -0.12, 1.85, 0.0, 1.57]
+    place_pose: [0.10, 0.30, -0.18, 1.85, 0.0, 1.57]
 ```
 
 位姿格式：
@@ -206,6 +210,18 @@ source install/setup.bash
 ```bash
 ros2 launch linker_manipulation bringup.launch.py \
   config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot.yaml
+```
+
+切换手型：
+
+```bash
+# O6, 当前默认
+ros2 launch linker_manipulation bringup.launch.py \
+  config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot_o6.yaml
+
+# L20 Lite
+ros2 launch linker_manipulation bringup.launch.py \
+  config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot_l20lite.yaml
 ```
 
 ## Basic Control
@@ -286,7 +302,7 @@ enable -> home -> open -> calibrate baseline -> pregrasp
 ros2 launch linker_manipulation tactile_heatmap.launch.py
 ```
 
-窗口显示五个 `12x6` 指尖触觉矩阵。
+窗口显示五个指尖触觉矩阵。O6 为 `10x4`，L20 Lite 为 `12x6`。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -340,6 +356,53 @@ ros2 launch linker_manipulation visualize.launch.py use_rviz:=false
 ```text
 src/linker_manipulation/urdf/a7_lite_right_mesh.urdf
 ```
+
+## MoveIt2 Table Collision
+
+URDF 已内置桌子 collision box：
+
+```text
+center: x=0.70, y=0.0, z=-0.325
+size:   x=0.8, y=2.0, z=0.05
+top_z:  -0.30
+```
+
+URDF 同时包含一个临时末端手部碰撞包围盒：
+
+```text
+link:   hand_collision_proxy
+size:   x=0.12, y=0.10, z=0.18
+origin: tcp_link 下方 0.09m
+```
+
+这是 O6/L20 Lite 的保守近似模型，用来避免末端低空扫过桌面。拿到精确手部 URDF 后应替换为真实手模型，或按实测尺寸调整这个 proxy。
+
+启动 MoveIt2 规划/可视化：
+
+```bash
+ros2 launch linker_manipulation bringup.launch.py
+ros2 launch linker_manipulation moveit_table.launch.py
+```
+
+无图形界面只启动 `move_group` 和 TF：
+
+```bash
+ros2 launch linker_manipulation moveit_table.launch.py use_rviz:=false
+```
+
+这个 launch 会启动：
+
+- `robot_state_publisher`
+- `move_group`
+- 可选 `rviz2`
+
+并将 MoveIt 的 `joint_states` remap 到：
+
+```text
+/linker/arm/state
+```
+
+当前 MoveIt2 配置用于规划和碰撞检查，默认 `allow_trajectory_execution=false`，不会直接控制真实机械臂。执行到硬件前，需要先确认规划轨迹安全，再接入轨迹到 SDK `move_j` waypoint 的执行层。
 
 ## Public Interfaces
 
@@ -447,7 +510,7 @@ PY
 ## Roadmap
 
 - 示教工具：保存当前 `/linker/arm/tcp_pose` 到 YAML
-- L20 Lite 抓取中心 TCP 标定
+- 灵巧手抓取中心 TCP 标定
 - rosbag 记录与触觉曲线分析
 - MoveIt2 和碰撞模型集成
 - 翻书、插卡、拧灯泡任务模板

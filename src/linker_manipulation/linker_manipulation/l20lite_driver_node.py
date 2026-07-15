@@ -19,7 +19,7 @@ from .tactile import finger_msg_from_matrix
 
 class L20LiteDriverNode(Node):
     def __init__(self) -> None:
-        super().__init__("l20lite_driver")
+        super().__init__("hand_driver")
         self.declare_parameter("config_path", "")
         config_path = self.get_parameter("config_path").get_parameter_value().string_value
         self._cfg: HandConfig = load_robot_config(config_path or None).hand
@@ -46,13 +46,17 @@ class L20LiteDriverNode(Node):
                 return True
             try:
                 ensure_linkerbot_sdk()
-                from linkerbot import L20lite
-                from linkerbot.hand.l20lite import SensorSource
-
-                if self._cfg.type != "L20lite":
+                hand_type = self._cfg.type.lower().replace("_", "")
+                if hand_type == "l20lite":
+                    from linkerbot import L20lite as HandClass
+                    from linkerbot.hand.l20lite import SensorSource
+                elif hand_type == "o6":
+                    from linkerbot import O6 as HandClass
+                    from linkerbot.hand.o6 import SensorSource
+                else:
                     raise ValueError(f"Unsupported hand type: {self._cfg.type}")
 
-                self._hand = L20lite(
+                self._hand = HandClass(
                     side=self._cfg.side,
                     interface_name=self._cfg.can,
                     interface_type=self._cfg.interface_type,
@@ -62,26 +66,31 @@ class L20LiteDriverNode(Node):
                 self._hand.torque.set_torques(self._cfg.default_torques)
                 self._start_configured_polling()
                 self.get_logger().info(
-                    f"Connected L20 Lite {self._cfg.side} hand on {self._cfg.can}."
+                    f"Connected {self._cfg.type} {self._cfg.side} hand on {self._cfg.can}."
                 )
                 return True
             except Exception as exc:
                 self._hand = None
                 self._sensor_source = None
-                self.get_logger().error(f"Failed to connect L20 Lite hand: {exc}")
+                self.get_logger().error(f"Failed to connect {self._cfg.type} hand: {exc}")
                 return False
 
     def _start_configured_polling(self) -> None:
         if self._hand is None or self._sensor_source is None:
             return
         source = self._sensor_source
-        mapping = {
-            "angle": source.ANGLE,
-            "force_sensor": source.FORCE_SENSOR,
-            "speed": source.SPEED,
-            "torque": source.TORQUE,
-            "temperature": source.TEMPERATURE,
-        }
+        mapping = {}
+        for name, attr in {
+            "angle": "ANGLE",
+            "force_sensor": "FORCE_SENSOR",
+            "speed": "SPEED",
+            "torque": "TORQUE",
+            "acceleration": "ACCELERATION",
+            "temperature": "TEMPERATURE",
+            "fault": "FAULT",
+        }.items():
+            if hasattr(source, attr):
+                mapping[name] = getattr(source, attr)
         intervals = {
             mapping[name]: interval
             for name, interval in self._cfg.polling.items()
@@ -92,7 +101,7 @@ class L20LiteDriverNode(Node):
 
     def _require_hand(self) -> Any:
         if not self._connect() or self._hand is None:
-            raise RuntimeError("L20 Lite hand is not connected")
+            raise RuntimeError(f"{self._cfg.type} hand is not connected")
         return self._hand
 
     def _trigger_response(self, success: bool, message: str) -> Trigger.Response:
@@ -108,18 +117,18 @@ class L20LiteDriverNode(Node):
                 hand.speed.set_speeds(self._cfg.default_speeds)
                 hand.torque.set_torques(self._cfg.default_torques)
                 hand.angle.set_angles(self._cfg.open_angles)
-            return self._trigger_response(True, "L20 Lite hand opened")
+            return self._trigger_response(True, f"{self._cfg.type} hand opened")
         except Exception as exc:
             return self._trigger_response(False, str(exc))
 
     def _handle_set_angles(self, request, _response) -> SetHandAngles.Response:
         response = SetHandAngles.Response()
         try:
-            angles = fixed_float_list(request.angles, 10)
+            angles = fixed_float_list(request.angles, 10)[: self._cfg.joint_count]
             with self._lock:
                 self._require_hand().angle.set_angles(angles)
             response.success = True
-            response.message = "L20 Lite angles sent"
+            response.message = f"{self._cfg.type} angles sent"
         except Exception as exc:
             response.success = False
             response.message = str(exc)
@@ -142,7 +151,7 @@ class L20LiteDriverNode(Node):
             try:
                 msg = HandState()
                 msg.header.stamp = self.get_clock().now().to_msg()
-                msg.header.frame_id = "l20lite_hand"
+                msg.header.frame_id = f"{self._cfg.type.lower()}_hand"
                 msg.angles = self._snapshot_values(self._hand.angle.get_snapshot(), "angles")
                 msg.speeds = self._snapshot_values(self._hand.speed.get_snapshot(), "speeds")
                 msg.torques = self._snapshot_values(self._hand.torque.get_snapshot(), "torques")
@@ -151,7 +160,7 @@ class L20LiteDriverNode(Node):
                 )
                 self._state_pub.publish(msg)
             except Exception as exc:
-                self.get_logger().warn(f"Failed to publish L20 Lite state: {exc}")
+                self.get_logger().warn(f"Failed to publish {self._cfg.type} state: {exc}")
 
     def _publish_tactile(self) -> None:
         with self._lock:
@@ -163,13 +172,13 @@ class L20LiteDriverNode(Node):
                     return
                 msg = HandTactile()
                 msg.header.stamp = self.get_clock().now().to_msg()
-                msg.header.frame_id = "l20lite_hand"
+                msg.header.frame_id = f"{self._cfg.type.lower()}_hand"
                 for name in FINGER_NAMES:
                     finger = getattr(data, name)
                     msg.fingers.append(finger_msg_from_matrix(name, finger.values))
                 self._tactile_pub.publish(msg)
             except Exception as exc:
-                self.get_logger().warn(f"Failed to publish L20 Lite tactile data: {exc}")
+                self.get_logger().warn(f"Failed to publish {self._cfg.type} tactile data: {exc}")
 
     def destroy_node(self) -> bool:
         with self._lock:

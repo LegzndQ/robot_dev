@@ -1,0 +1,16 @@
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+moveit_simple_controller_manager:
+  controller_names:
+    - fake_arm_controller
+  fake_arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - R1_JOINT
+      - R2_JOINT
+      - R3_JOINT
+      - R4_JOINT
+      - R5_JOINT
+      - R6_JOINT
+      - R7_JOINT

@@ -18,7 +18,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "config_path",
                 default_value=default_config,
-                description="Path to the A7/L20 Lite robot configuration YAML.",
+                description="Path to the A7/LinkerHand robot configuration YAML.",
             ),
             Node(
                 package="linker_manipulation",
@@ -29,8 +29,8 @@ def generate_launch_description():
             ),
             Node(
                 package="linker_manipulation",
-                executable="l20lite_driver_node",
-                name="l20lite_driver",
+                executable="hand_driver_node",
+                name="hand_driver",
                 output="screen",
                 parameters=common_params,
             ),

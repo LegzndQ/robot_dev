@@ -19,6 +19,44 @@ def _as_pose(value: Any) -> list[float]:
     return _as_float_list(value, 6)
 
 
+def _hand_model_defaults(hand_type: str) -> dict[str, Any]:
+    normalized = hand_type.lower()
+    if normalized == "o6":
+        return {
+            "type": "O6",
+            "joint_count": 6,
+            "tactile_shape": [10, 4],
+            "open_angles": [100.0, 50.0, 100.0, 100.0, 100.0, 100.0],
+            "pregrasp_angles": [85.0, 45.0, 70.0, 70.0, 75.0, 80.0],
+            "default_speeds": [50.0] * 6,
+            "default_torques": [45.0] * 6,
+            "max_closed_angles": [30.0, 35.0, 0.0, 0.0, 5.0, 20.0],
+        }
+    if normalized in ("l20lite", "l20_lite"):
+        return {
+            "type": "L20lite",
+            "joint_count": 10,
+            "tactile_shape": [12, 6],
+            "open_angles": [100.0] * 10,
+            "pregrasp_angles": [85.0] * 10,
+            "default_speeds": [50.0] * 10,
+            "default_torques": [45.0] * 10,
+            "max_closed_angles": [
+                28.0,
+                100.0,
+                0.0,
+                0.0,
+                5.0,
+                20.0,
+                100.0,
+                100.0,
+                100.0,
+                70.0,
+            ],
+        }
+    raise ValueError(f"Unsupported hand type: {hand_type}")
+
+
 @dataclass(frozen=True)
 class ArmConfig:
     type: str = "A7"
@@ -35,17 +73,19 @@ class ArmConfig:
 
 @dataclass(frozen=True)
 class HandConfig:
-    type: str = "L20lite"
+    type: str = "O6"
     side: str = "left"
     can: str = "can1"
     interface_type: str = "socketcan"
+    joint_count: int = 6
+    tactile_shape: list[int] = field(default_factory=lambda: [10, 4])
     connect_on_start: bool = True
     state_rate_hz: float = 30.0
     tactile_rate_hz: float = 30.0
-    open_angles: list[float] = field(default_factory=lambda: [100.0] * 10)
-    pregrasp_angles: list[float] = field(default_factory=lambda: [85.0] * 10)
-    default_speeds: list[float] = field(default_factory=lambda: [50.0] * 10)
-    default_torques: list[float] = field(default_factory=lambda: [45.0] * 10)
+    open_angles: list[float] = field(default_factory=lambda: [100.0, 50.0, 100.0, 100.0, 100.0, 100.0])
+    pregrasp_angles: list[float] = field(default_factory=lambda: [85.0, 45.0, 70.0, 70.0, 75.0, 80.0])
+    default_speeds: list[float] = field(default_factory=lambda: [50.0] * 6)
+    default_torques: list[float] = field(default_factory=lambda: [45.0] * 6)
     polling: dict[str, float] = field(default_factory=dict)
 
 
@@ -120,18 +160,36 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
         ),
     )
 
+    requested_hand_type = str(hand_raw.get("type", "O6"))
+    hand_defaults = _hand_model_defaults(requested_hand_type)
+    joint_count = int(hand_raw.get("joint_count", hand_defaults["joint_count"]))
+    tactile_shape = [int(v) for v in hand_raw.get("tactile_shape", hand_defaults["tactile_shape"])]
+    if len(tactile_shape) != 2:
+        raise ValueError("hand.tactile_shape must be [rows, cols]")
+
     hand = HandConfig(
-        type=str(hand_raw.get("type", "L20lite")),
+        type=str(hand_raw.get("type", hand_defaults["type"])),
         side=str(hand_raw.get("side", "left")),
         can=str(hand_raw.get("can", "can1")),
         interface_type=str(hand_raw.get("interface_type", "socketcan")),
+        joint_count=joint_count,
+        tactile_shape=tactile_shape,
         connect_on_start=bool(hand_raw.get("connect_on_start", True)),
         state_rate_hz=float(hand_raw.get("state_rate_hz", 30.0)),
         tactile_rate_hz=float(hand_raw.get("tactile_rate_hz", 30.0)),
-        open_angles=_as_float_list(hand_raw.get("open_angles", [100.0] * 10), 10),
-        pregrasp_angles=_as_float_list(hand_raw.get("pregrasp_angles", [85.0] * 10), 10),
-        default_speeds=_as_float_list(hand_raw.get("default_speeds", [50.0] * 10), 10),
-        default_torques=_as_float_list(hand_raw.get("default_torques", [45.0] * 10), 10),
+        open_angles=_as_float_list(hand_raw.get("open_angles", hand_defaults["open_angles"]), joint_count),
+        pregrasp_angles=_as_float_list(
+            hand_raw.get("pregrasp_angles", hand_defaults["pregrasp_angles"]),
+            joint_count,
+        ),
+        default_speeds=_as_float_list(
+            hand_raw.get("default_speeds", hand_defaults["default_speeds"]),
+            joint_count,
+        ),
+        default_torques=_as_float_list(
+            hand_raw.get("default_torques", hand_defaults["default_torques"]),
+            joint_count,
+        ),
         polling={str(k): float(v) for k, v in (hand_raw.get("polling", {}) or {}).items()},
     )
 
@@ -157,7 +215,10 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
         approach_waypoints=[
             str(name) for name in (grasp_raw.get("approach_waypoints", []) or [])
         ],
-        max_closed_angles=_as_float_list(grasp_raw.get("max_closed_angles", [0.0] * 10), 10),
+        max_closed_angles=_as_float_list(
+            grasp_raw.get("max_closed_angles", hand_defaults["max_closed_angles"]),
+            hand.joint_count,
+        ),
         poses=poses,
     )
 

@@ -3,7 +3,7 @@
 <package format="3">
   <name>linker_manip_interfaces</name>
   <version>0.1.0</version>
-  <description>ROS2 interfaces for Linker A7 and L20 Lite manipulation demos.</description>
+  <description>ROS2 interfaces for Linker A7 and LinkerHand manipulation demos.</description>
   <maintainer email="user@example.com">robot_dev</maintainer>
   <license>Apache-2.0</license>
 

@@ -40,6 +40,29 @@
     </visual>
   </link>
 
+  <link name="table_collision">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8 2.0 0.05" />
+      </geometry>
+      <material name="table_surface">
+        <color rgba="0.20 0.42 0.72 0.35" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8 2.0 0.05" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base_to_table_collision" type="fixed">
+    <origin xyz="0.7 0 -0.325" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="table_collision" />
+  </joint>
+
   <link name="R_arm_root" />
   <joint name="base_to_R_arm_root" type="fixed">
     <origin xyz="0 -0.1435 0" rpy="0 0 0" />
@@ -300,6 +323,29 @@
     <origin xyz="0 0 -0.08" rpy="0 0 0" />
     <parent link="R7_Link" />
     <child link="tcp_link" />
+  </joint>
+
+  <link name="hand_collision_proxy">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.12 0.10 0.18" />
+      </geometry>
+      <material name="hand_collision_proxy_blue">
+        <color rgba="0.10 0.55 0.95 0.28" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.12 0.10 0.18" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="tcp_to_hand_collision_proxy" type="fixed">
+    <origin xyz="0 0 -0.09" rpy="0 0 0" />
+    <parent link="tcp_link" />
+    <child link="hand_collision_proxy" />
   </joint>
 
 </robot>

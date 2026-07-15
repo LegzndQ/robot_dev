@@ -148,7 +148,9 @@ class GraspControllerNode(Node):
             if tactile_msg is not None:
                 snapshot = hand_tactile_to_snapshot(tactile_msg)
                 for finger in self._grasp_cfg.active_fingers:
-                    collected[finger].append(snapshot.values[finger].astype(np.float32))
+                    matrix = snapshot.values[finger]
+                    if matrix.size:
+                        collected[finger].append(matrix.astype(np.float32))
             if all(len(items) >= samples for items in collected.values()):
                 break
             time.sleep(self._grasp_cfg.regulate_period_sec)
@@ -161,7 +163,7 @@ class GraspControllerNode(Node):
             if matrices:
                 baseline[finger] = np.mean(matrices[:samples], axis=0)
             else:
-                baseline[finger] = np.zeros((12, 6), dtype=np.float32)
+                baseline[finger] = np.zeros(self._hand_cfg.tactile_shape, dtype=np.float32)
         with self._data_lock:
             self._baseline = baseline
 
@@ -178,7 +180,7 @@ class GraspControllerNode(Node):
             msg = self._latest_hand_state
         if msg is None:
             return list(self._hand_cfg.open_angles)
-        return fixed_float_list(msg.angles, 10)
+        return fixed_float_list(msg.angles, 10)[: self._hand_cfg.joint_count]
 
     def _active_scores(self) -> list[float]:
         snapshot = self._current_tactile()

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="a7_lite_right">
+  <virtual_joint
+    name="fixed_base"
+    type="fixed"
+    parent_frame="world"
+    child_link="base_link" />
+
+  <group name="a7_lite_arm">
+    <chain base_link="base_link" tip_link="tcp_link" />
+  </group>
+
+  <group_state name="home" group="a7_lite_arm">
+    <joint name="R1_JOINT" value="0" />
+    <joint name="R2_JOINT" value="0" />
+    <joint name="R3_JOINT" value="0" />
+    <joint name="R4_JOINT" value="0" />
+    <joint name="R5_JOINT" value="0" />
+    <joint name="R6_JOINT" value="0" />
+    <joint name="R7_JOINT" value="0" />
+  </group_state>
+
+  <disable_collisions link1="base_link" link2="R_arm_root" reason="Adjacent" />
+  <disable_collisions link1="R_arm_root" link2="R1_Link" reason="Adjacent" />
+  <disable_collisions link1="R1_Link" link2="R2_Link" reason="Adjacent" />
+  <disable_collisions link1="R2_Link" link2="R3_Link" reason="Adjacent" />
+  <disable_collisions link1="R3_Link" link2="R4_Link" reason="Adjacent" />
+  <disable_collisions link1="R4_Link" link2="R5_Link" reason="Adjacent" />
+  <disable_collisions link1="R5_Link" link2="R6_Link" reason="Adjacent" />
+  <disable_collisions link1="R6_Link" link2="R7_Link" reason="Adjacent" />
+  <disable_collisions link1="R7_Link" link2="tcp_link" reason="Adjacent" />
+  <disable_collisions link1="tcp_link" link2="hand_collision_proxy" reason="Adjacent" />
+</robot>

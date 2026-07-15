@@ -69,6 +69,18 @@ def _interpolate_color(value: float, palette_name: str) -> tuple[int, int, int]:
     return palette[-1][1]
 
 
+def _matrix_max(matrix: np.ndarray) -> float:
+    return float(matrix.max()) if matrix.size else 0.0
+
+
+def _matrix_mean(matrix: np.ndarray) -> float:
+    return float(matrix.mean()) if matrix.size else 0.0
+
+
+def _matrix_percentile(matrix: np.ndarray, percentile: float) -> float:
+    return float(np.percentile(matrix, percentile)) if matrix.size else 0.0
+
+
 class TactileHeatmapNode(Node):
     def __init__(self) -> None:
         super().__init__("tactile_heatmap")
@@ -95,7 +107,7 @@ class TactileHeatmapNode(Node):
 
         self._lock = threading.Lock()
         self._matrices = {
-            finger: np.zeros((12, 6), dtype=np.uint8) for finger in FINGER_NAMES
+            finger: np.zeros((0, 0), dtype=np.uint8) for finger in FINGER_NAMES
         }
         self._scores = {finger: 0.0 for finger in FINGER_NAMES}
         self._last_msg_time: float | None = None
@@ -107,11 +119,18 @@ class TactileHeatmapNode(Node):
         matrices: dict[str, np.ndarray] = {}
         scores: dict[str, float] = {}
         for finger in msg.fingers:
-            if finger.finger not in FINGER_NAMES or len(finger.values) != 72:
+            rows = int(finger.rows)
+            cols = int(finger.cols)
+            if (
+                finger.finger not in FINGER_NAMES
+                or rows <= 0
+                or cols <= 0
+                or len(finger.values) != rows * cols
+            ):
                 continue
             matrices[finger.finger] = np.array(
                 finger.values, dtype=np.uint8
-            ).reshape(12, 6)
+            ).reshape(rows, cols)
             scores[finger.finger] = float(finger.score)
 
         if not matrices:
@@ -142,7 +161,7 @@ class HeatmapWidget:
         class _Widget(QWidget):
             def __init__(self) -> None:
                 super().__init__()
-                self.matrix = np.zeros((12, 6), dtype=np.float32)
+                self.matrix = np.zeros((0, 0), dtype=np.float32)
                 self.score = 0.0
                 self.raw_max = 0.0
                 self.raw_mean = 0.0
@@ -199,8 +218,10 @@ class HeatmapWidget:
                 margin_x = 14
                 top = 82
                 bottom = 16
-                cols = 6
-                rows = 12
+                rows, cols = self.matrix.shape
+                if rows <= 0 or cols <= 0:
+                    painter.drawText(12, 92, "waiting for data")
+                    return
                 gap = 3
                 available_w = rect.width() - margin_x * 2
                 available_h = rect.height() - top - bottom
@@ -254,7 +275,7 @@ class TactileHeatmapWindow:
         self._baseline_frames: deque[dict[str, np.ndarray]] = deque()
 
         self.window = QMainWindow()
-        self.window.setWindowTitle("L20 Lite Tactile Heatmap")
+        self.window.setWindowTitle("LinkerHand Tactile Heatmap")
         self.window.resize(1120, 720)
 
         root = QWidget()
@@ -266,7 +287,7 @@ class TactileHeatmapWindow:
         main_layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = QLabel("L20 Lite Tactile Heatmap")
+        title = QLabel("LinkerHand Tactile Heatmap")
         title.setObjectName("title")
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._status = QLabel(f"Waiting for {node.topic}")
@@ -408,25 +429,40 @@ class TactileHeatmapWindow:
                 if len(self._baseline_frames) >= self._node.baseline_samples:
                     self._baseline = {}
                     for finger in FINGER_NAMES:
-                        stack = np.stack([frame[finger] for frame in self._baseline_frames])
-                        self._baseline[finger] = np.mean(stack, axis=0)
+                        frames = [
+                            frame[finger]
+                            for frame in self._baseline_frames
+                            if frame[finger].size > 0
+                        ]
+                        if frames:
+                            shape = frames[-1].shape
+                            frames = [frame for frame in frames if frame.shape == shape]
+                            stack = np.stack(frames)
+                            self._baseline[finger] = np.mean(stack, axis=0)
+                        else:
+                            self._baseline[finger] = np.zeros((0, 0), dtype=np.float32)
                     self._baseline_frames.clear()
             if self._baseline is not None:
                 baseline_status = "delta"
 
         display_matrices: dict[str, np.ndarray] = {}
         for finger, raw_matrix in raw_matrices.items():
-            if self._delta_mode and self._baseline is not None:
+            baseline = None if self._baseline is None else self._baseline.get(finger)
+            if (
+                self._delta_mode
+                and baseline is not None
+                and baseline.shape == raw_matrix.shape
+            ):
                 display_matrices[finger] = np.clip(
-                    raw_matrix - self._baseline[finger],
+                    raw_matrix - baseline,
                     0.0,
                     255.0,
                 )
             else:
                 display_matrices[finger] = raw_matrix
 
-        global_raw_max = max(float(matrix.max()) for matrix in raw_matrices.values())
-        global_view_max = max(float(matrix.max()) for matrix in display_matrices.values())
+        global_raw_max = max(_matrix_max(matrix) for matrix in raw_matrices.values())
+        global_view_max = max(_matrix_max(matrix) for matrix in display_matrices.values())
         display_vmax = self._vmax
         if self._auto_scale:
             display_vmax = float(np.clip(max(10.0, global_view_max * 1.2), 10.0, 255.0))
@@ -437,12 +473,12 @@ class TactileHeatmapWindow:
         for finger, widget in self._heatmaps.items():
             raw_matrix = raw_matrices[finger]
             display_matrix = display_matrices[finger]
-            display_score = float(np.percentile(display_matrix, 90))
+            display_score = _matrix_percentile(display_matrix, 90)
             widget.set_data(
                 display_matrix,
                 display_score,
-                float(raw_matrix.max()),
-                float(raw_matrix.mean()),
+                _matrix_max(raw_matrix),
+                _matrix_mean(raw_matrix),
                 self._vmin,
                 display_vmax,
             )
