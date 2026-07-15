@@ -57,7 +57,11 @@ def _launch_setup(context):
             package_name, "config/moveit/kinematics.yaml"
         )
     }
-    joint_limits = _load_yaml(package_name, "config/moveit/joint_limits.yaml")
+    joint_limits = {
+        "robot_description_planning": _load_yaml(
+            package_name, "config/moveit/joint_limits.yaml"
+        )
+    }
     ompl_planning = _load_yaml(package_name, "config/moveit/ompl_planning.yaml")
     moveit_controllers = _load_yaml(
         package_name, "config/moveit/moveit_controllers_ros2_control.yaml"
@@ -84,7 +88,6 @@ def _launch_setup(context):
         Node(
             package="moveit_ros_move_group",
             executable="move_group",
-            name="move_group",
             output="screen",
             parameters=[
                 robot_description,
@@ -103,7 +106,6 @@ def _launch_setup(context):
             Node(
                 package="rviz2",
                 executable="rviz2",
-                name="linker_moveit_ros2_control_rviz2",
                 output="screen",
                 arguments=["-d", _value(context, "rviz_config")],
                 parameters=[

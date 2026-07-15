@@ -62,14 +62,19 @@ demo:
   record_bag: true
   bag_dir: bags/grasp_demo
   record_topics:
-    - /linker/arm/state
-    - /linker/arm/tcp_pose
+    - /joint_states
+    - /a7_arm_controller/controller_state
     - /linker/hand/state
     - /linker/hand/tactile
 
 moveit:
   joint_names: [R1_JOINT, R2_JOINT, R3_JOINT, R4_JOINT, R5_JOINT, R6_JOINT, R7_JOINT]
   joint_tolerance: 0.03
+  planning_time: 8.0
+  planning_attempts: 10
+  velocity_scaling: 0.40
+  acceleration_scaling: 0.35
+  execution_timeout_sec: 90.0
   joint_targets:
     home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     pregrasp: [-0.464362, 0.477021, 0.638905, -1.599853, 1.012543, 0.573691, 0.115659]

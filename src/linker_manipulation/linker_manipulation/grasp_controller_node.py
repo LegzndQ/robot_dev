@@ -5,6 +5,8 @@ import time
 
 import numpy as np
 import rclpy
+from moveit_msgs.action import MoveGroup
+from moveit_msgs.msg import Constraints, JointConstraint
 from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -15,7 +17,12 @@ from linker_manip_interfaces.action import Grasp, MoveArm
 from linker_manip_interfaces.msg import HandState, HandTactile
 from linker_manip_interfaces.srv import SetHandAngles
 
-from .config import GraspConfig, HandConfig, load_robot_config
+from .config import (
+    GraspConfig,
+    HandConfig,
+    MoveItConfig,
+    load_robot_config,
+)
 from .ros_utils import clamp, fixed_float_list, pose_msg_from_list
 from .tactile import TactileSnapshot, hand_tactile_to_snapshot
 
@@ -24,10 +31,17 @@ class GraspControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("grasp_controller")
         self.declare_parameter("config_path", "")
+        self.declare_parameter("arm_backend", "sdk")
         config_path = self.get_parameter("config_path").get_parameter_value().string_value
         robot_cfg = load_robot_config(config_path or None)
         self._grasp_cfg: GraspConfig = robot_cfg.grasp
         self._hand_cfg: HandConfig = robot_cfg.hand
+        self._moveit_cfg: MoveItConfig = robot_cfg.moveit
+        self._arm_backend = str(
+            self.get_parameter("arm_backend").value
+        ).strip().lower()
+        if self._arm_backend not in {"sdk", "moveit"}:
+            raise ValueError("arm_backend must be 'sdk' or 'moveit'")
 
         self._cb_group = ReentrantCallbackGroup()
         self._data_lock = threading.RLock()
@@ -60,15 +74,16 @@ class GraspControllerNode(Node):
             "/linker/hand/open",
             callback_group=self._cb_group,
         )
-        self._arm_estop_client = self.create_client(
-            Trigger,
-            "/linker/arm/emergency_stop",
-            callback_group=self._cb_group,
-        )
         self._move_arm_client = ActionClient(
             self,
             MoveArm,
             "/linker/arm/move_arm",
+            callback_group=self._cb_group,
+        )
+        self._move_group_client = ActionClient(
+            self,
+            MoveGroup,
+            "/move_action",
             callback_group=self._cb_group,
         )
 
@@ -85,6 +100,7 @@ class GraspControllerNode(Node):
             execute_callback=self._execute_grasp,
             callback_group=self._cb_group,
         )
+        self.get_logger().info(f"Grasp arm backend: {self._arm_backend}")
 
     def _on_hand_state(self, msg: HandState) -> None:
         with self._data_lock:
@@ -214,10 +230,6 @@ class GraspControllerNode(Node):
 
     def _check_cancel(self, goal_handle) -> None:
         if goal_handle.is_cancel_requested:
-            try:
-                self._call_trigger(self._arm_estop_client, "/linker/arm/emergency_stop", timeout_sec=1.0)
-            except Exception:
-                pass
             raise InterruptedError("Grasp goal canceled")
 
     def _close_until_contact(self, goal_handle, timeout_sec: float) -> bool:
@@ -302,6 +314,133 @@ class GraspControllerNode(Node):
         goal.target_pose = pose_msg_from_list(self._grasp_cfg.poses[pose_name])
         return goal
 
+    def _make_moveit_joint_goal(self, target_name: str) -> MoveGroup.Goal:
+        if target_name not in self._moveit_cfg.joint_targets:
+            available = ", ".join(sorted(self._moveit_cfg.joint_targets))
+            raise KeyError(
+                f"Missing MoveIt joint target '{target_name}'. Available: {available}"
+            )
+
+        constraints = Constraints()
+        constraints.name = target_name
+        for joint_name, position in zip(
+            self._moveit_cfg.joint_names,
+            self._moveit_cfg.joint_targets[target_name],
+        ):
+            joint = JointConstraint()
+            joint.joint_name = joint_name
+            joint.position = float(position)
+            joint.tolerance_above = self._moveit_cfg.joint_tolerance
+            joint.tolerance_below = self._moveit_cfg.joint_tolerance
+            joint.weight = 1.0
+            constraints.joint_constraints.append(joint)
+
+        goal = MoveGroup.Goal()
+        goal.request.group_name = "a7_lite_arm"
+        goal.request.num_planning_attempts = self._moveit_cfg.planning_attempts
+        goal.request.allowed_planning_time = self._moveit_cfg.planning_time
+        goal.request.max_velocity_scaling_factor = self._moveit_cfg.velocity_scaling
+        goal.request.max_acceleration_scaling_factor = (
+            self._moveit_cfg.acceleration_scaling
+        )
+        goal.request.start_state.is_diff = True
+        goal.request.goal_constraints = [constraints]
+        goal.planning_options.planning_scene_diff.is_diff = True
+        goal.planning_options.plan_only = False
+        goal.planning_options.replan = True
+        goal.planning_options.replan_attempts = 2
+        goal.planning_options.replan_delay = 0.2
+        return goal
+
+    def _move_arm_moveit(
+        self,
+        target_name: str,
+        timeout_sec: float,
+        phase: str,
+        grasp_goal_handle=None,
+        monitor_slip: bool = False,
+        reference_force: float = 0.0,
+        force_low: float = 0.0,
+    ) -> None:
+        if not self._move_group_client.wait_for_server(timeout_sec=10.0):
+            raise RuntimeError("MoveIt action server unavailable: /move_action")
+
+        self.get_logger().info(
+            f"MoveIt phase '{phase}' -> joint target '{target_name}'"
+        )
+        goal_future = self._move_group_client.send_goal_async(
+            self._make_moveit_joint_goal(target_name)
+        )
+        if not self._wait_future(goal_future, 10.0):
+            raise TimeoutError(f"Timed out sending MoveIt phase: {phase}")
+        moveit_goal_handle = goal_future.result()
+        if moveit_goal_handle is None or not moveit_goal_handle.accepted:
+            raise RuntimeError(f"MoveIt rejected phase: {phase}")
+
+        result_future = moveit_goal_handle.get_result_async()
+        low_since: float | None = None
+        deadline = time.monotonic() + max(
+            timeout_sec, self._moveit_cfg.execution_timeout_sec
+        )
+        while rclpy.ok() and not result_future.done():
+            if time.monotonic() > deadline:
+                moveit_goal_handle.cancel_goal_async()
+                raise TimeoutError(f"MoveIt phase timed out: {phase}")
+            if grasp_goal_handle is not None:
+                if grasp_goal_handle.is_cancel_requested:
+                    cancel_future = moveit_goal_handle.cancel_goal_async()
+                    self._wait_future(cancel_future, 2.0)
+                    raise InterruptedError("Grasp goal canceled")
+                self._publish_feedback(
+                    grasp_goal_handle, phase, 0.70 if monitor_slip else 0.25
+                )
+            if monitor_slip:
+                low_since = self._monitor_slip(
+                    reference_force, force_low, low_since
+                )
+            time.sleep(self._grasp_cfg.regulate_period_sec)
+
+        wrapped = result_future.result()
+        if wrapped is None:
+            raise RuntimeError(f"MoveIt phase finished without a result: {phase}")
+        error_code = int(wrapped.result.error_code.val)
+        if error_code != 1:
+            raise RuntimeError(
+                f"MoveIt failed during {phase}: error_code={error_code}"
+            )
+
+    def _move_phase(
+        self,
+        target_name: str,
+        sdk_goal: MoveArm.Goal,
+        timeout_sec: float,
+        phase: str,
+        grasp_goal_handle=None,
+        monitor_slip: bool = False,
+        reference_force: float = 0.0,
+        force_low: float = 0.0,
+    ) -> None:
+        if self._arm_backend == "moveit":
+            self._move_arm_moveit(
+                target_name,
+                timeout_sec,
+                phase,
+                grasp_goal_handle,
+                monitor_slip,
+                reference_force,
+                force_low,
+            )
+            return
+        self._move_arm(
+            sdk_goal,
+            timeout_sec,
+            phase,
+            grasp_goal_handle,
+            monitor_slip,
+            reference_force,
+            force_low,
+        )
+
     def _approach_mode(self) -> int:
         mode = self._grasp_cfg.approach_mode
         if mode == "linear":
@@ -334,9 +473,13 @@ class GraspControllerNode(Node):
         deadline = time.monotonic() + timeout_sec
         while rclpy.ok() and not result_future.done():
             if time.monotonic() > deadline:
+                arm_goal_handle.cancel_goal_async()
                 raise TimeoutError(f"MoveArm phase timed out: {phase}")
             if grasp_goal_handle is not None:
-                self._check_cancel(grasp_goal_handle)
+                if grasp_goal_handle.is_cancel_requested:
+                    cancel_future = arm_goal_handle.cancel_goal_async()
+                    self._wait_future(cancel_future, 2.0)
+                    raise InterruptedError("Grasp goal canceled")
                 self._publish_feedback(grasp_goal_handle, phase, 0.70 if monitor_slip else 0.25)
             if monitor_slip:
                 low_since = self._monitor_slip(reference_force, force_low, low_since)
@@ -364,6 +507,21 @@ class GraspControllerNode(Node):
             time.sleep(self._grasp_cfg.regulate_period_sec)
 
     def _move_to_pregrasp(self, goal_handle, timeout_sec: float) -> None:
+        if self._arm_backend == "moveit":
+            for pose_name in self._grasp_cfg.approach_waypoints:
+                target_name = pose_name.removesuffix("_pose")
+                if target_name in self._moveit_cfg.joint_targets:
+                    self._move_arm_moveit(
+                        target_name,
+                        timeout_sec,
+                        f"approach_waypoint:{target_name}",
+                        goal_handle,
+                    )
+            self._move_arm_moveit(
+                "pregrasp", timeout_sec, "approach", goal_handle
+            )
+            return
+
         for index, pose_name in enumerate(self._grasp_cfg.approach_waypoints):
             self._move_arm(
                 self._make_pose_goal(MoveArm.Goal.MODE_POSE, pose_name),
@@ -379,6 +537,23 @@ class GraspControllerNode(Node):
             goal_handle,
         )
 
+    def _validate_grasp_request(self, force_low: float, force_high: float) -> None:
+        if force_low <= 0.0 or force_high <= force_low:
+            raise ValueError(
+                f"Invalid force band: low={force_low}, high={force_high}"
+            )
+        if self._arm_backend != "moveit":
+            return
+        required_targets = {"pregrasp", "grasp", "lift", "place"}
+        missing = sorted(
+            required_targets.difference(self._moveit_cfg.joint_targets)
+        )
+        if missing:
+            raise KeyError(
+                "Missing MoveIt joint targets required by grasp demo: "
+                f"{', '.join(missing)}"
+            )
+
     def _execute_grasp(self, goal_handle):
         request = goal_handle.request
         result = Grasp.Result()
@@ -390,7 +565,9 @@ class GraspControllerNode(Node):
             else self._grasp_cfg.action_timeout_sec
         )
 
+        object_grasped = False
         try:
+            self._validate_grasp_request(force_low, force_high)
             self._check_cancel(goal_handle)
             self._publish_feedback(goal_handle, "open", 0.05)
             self._call_trigger(self._open_client, "/linker/hand/open")
@@ -403,7 +580,8 @@ class GraspControllerNode(Node):
 
             self._publish_feedback(goal_handle, "pregrasp", 0.25)
             self._set_angles(self._hand_cfg.pregrasp_angles)
-            self._move_arm(
+            self._move_phase(
+                "grasp",
                 self._make_pose_goal(MoveArm.Goal.MODE_LINEAR, "grasp_pose"),
                 timeout_sec,
                 "pregrasp",
@@ -417,9 +595,11 @@ class GraspControllerNode(Node):
                 raise RuntimeError("Unable to regulate grasp force into target band")
 
             reference_force = max(force_low, self._aggregate_force())
+            object_grasped = True
 
             self._publish_feedback(goal_handle, "lift", 0.65)
-            self._move_arm(
+            self._move_phase(
+                "lift",
                 self._make_pose_goal(MoveArm.Goal.MODE_LINEAR, "lift_pose"),
                 timeout_sec,
                 "lift",
@@ -432,7 +612,8 @@ class GraspControllerNode(Node):
             self._hold_with_monitor(goal_handle, reference_force, force_low, self._grasp_cfg.hold_sec)
 
             self._publish_feedback(goal_handle, "place", 0.90)
-            self._move_arm(
+            self._move_phase(
+                "place",
                 self._make_pose_goal(MoveArm.Goal.MODE_LINEAR, "place_pose"),
                 timeout_sec,
                 "place",
@@ -444,6 +625,7 @@ class GraspControllerNode(Node):
 
             self._publish_feedback(goal_handle, "release", 0.98)
             self._call_trigger(self._open_client, "/linker/hand/open")
+            object_grasped = False
 
             goal_handle.succeed()
             result.success = True
@@ -451,6 +633,10 @@ class GraspControllerNode(Node):
             result.error = ""
             return result
         except InterruptedError as exc:
+            if object_grasped:
+                self.get_logger().warn(
+                    "Demo canceled after contact; retaining hand grip for manual recovery"
+                )
             goal_handle.canceled()
             result.success = False
             result.result_code = "canceled"
@@ -458,10 +644,17 @@ class GraspControllerNode(Node):
             return result
         except Exception as exc:
             self.get_logger().error(f"Grasp failed: {exc}")
-            try:
-                self._call_trigger(self._open_client, "/linker/hand/open", timeout_sec=1.0)
-            except Exception:
-                pass
+            if object_grasped:
+                self.get_logger().error(
+                    "Failure occurred after contact; retaining hand grip for manual recovery"
+                )
+            else:
+                try:
+                    self._call_trigger(
+                        self._open_client, "/linker/hand/open", timeout_sec=1.0
+                    )
+                except Exception:
+                    pass
             goal_handle.abort()
             result.success = False
             result.result_code = "failed"
@@ -480,10 +673,13 @@ def main(args: list[str] | None = None) -> None:
     executor.add_node(node)
     try:
         executor.spin()
+    except KeyboardInterrupt:
+        pass
     finally:
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

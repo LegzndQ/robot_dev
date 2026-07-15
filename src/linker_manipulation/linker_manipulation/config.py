@@ -143,6 +143,11 @@ class MoveItConfig:
     joint_names: list[str] = field(default_factory=list)
     joint_tolerance: float = 0.03
     joint_targets: dict[str, list[float]] = field(default_factory=dict)
+    planning_time: float = 8.0
+    planning_attempts: int = 10
+    velocity_scaling: float = 0.15
+    acceleration_scaling: float = 0.15
+    execution_timeout_sec: float = 90.0
 
 
 @dataclass(frozen=True)
@@ -271,6 +276,17 @@ def load_robot_config(path: str | Path | None = None) -> RobotConfig:
         joint_names=joint_names,
         joint_tolerance=float(moveit_raw.get("joint_tolerance", 0.03)),
         joint_targets=joint_targets,
+        planning_time=float(moveit_raw.get("planning_time", 8.0)),
+        planning_attempts=int(moveit_raw.get("planning_attempts", 10)),
+        velocity_scaling=float(
+            moveit_raw.get("velocity_scaling", 0.15)
+        ),
+        acceleration_scaling=float(
+            moveit_raw.get("acceleration_scaling", 0.15)
+        ),
+        execution_timeout_sec=float(
+            moveit_raw.get("execution_timeout_sec", 90.0)
+        ),
     )
 
     return RobotConfig(arm=arm, hand=hand, grasp=grasp, demo=demo, moveit=moveit)

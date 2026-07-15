@@ -1,69 +1,121 @@
-# Linker A7 Lite + LinkerHand Tactile Grasp
+# Linker A7 Lite Tactile Manipulation
 
-![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E)
-![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420)
-![License](https://img.shields.io/badge/License-Apache--2.0-green)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)
+![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)
+![MoveIt 2](https://img.shields.io/badge/MoveIt%202-Planning-2A6DB0)
+![License](https://img.shields.io/badge/License-Apache--2.0-2E8B57)
 
-基于 ROS2 Humble 的 Linker A7/A7 Lite 机械臂 + LinkerHand 灵巧手触觉抓取工程。
-
-当前目标是先跑通一个固定工位、无视觉的稳定抓取闭环：
+面向 **Linker A7 Lite 右臂 + O6 / L20 Lite 右手** 的 ROS 2 触觉抓取工程。
+机械臂由 MoveIt 2 进行碰撞规划，通过原生 `ros2_control` 控制器连续执行轨迹；
+灵巧手通过 Linkerbot Python SDK 读取指尖触觉并动态调节夹持力度。
 
 ```text
-approach -> tactile close -> force regulate -> lift -> place -> release
+pregrasp -> grasp -> tactile contact -> force regulate
+         -> lift -> hold -> place -> release
 ```
 
-后续翻书、插卡、拧灯泡等 demo 可以复用同一套运动、接触检测和触觉调力原语。
+当前提供固定工位水瓶 Demo。后续翻书、插卡和拧灯泡任务可以复用运动规划、
+接触检测、力度保持和滑移保护等基础能力。
 
-## Highlights
+> [!CAUTION]
+> 本项目会驱动真实机械臂。首次运行必须空载或使用轻软物体，清空工作区，
+> 保持物理急停和断电开关可触达，并先完成 mock 规划测试。
 
-- A7/A7 Lite 机械臂 ROS2 driver
-- O6 / L20 Lite 灵巧手 ROS2 driver
-- `MoveArm.action`：关节、位姿、直线运动
-- `Grasp.action`：接触检测、力度闭环、滑移保护
-- YAML 配置固定工位 demo 位姿
+## 目录
+
+- [功能](#功能)
+- [系统架构](#系统架构)
+- [硬件与环境](#硬件与环境)
+- [快速开始](#快速开始)
+- [水瓶 Demo](#水瓶-demo)
+- [配置说明](#配置说明)
+- [调试工具](#调试工具)
+- [ROS 2 接口](#ros-2-接口)
+- [常见问题](#常见问题)
+- [安全说明](#安全说明)
+
+## 功能
+
+- A7 Lite C++ SocketCAN `ros2_control` 硬件接口
+- 100 Hz `joint_trajectory_controller` 连续轨迹跟踪
+- MoveIt 2 关节规划、碰撞检查与轨迹执行
+- O6 / L20 Lite 可切换灵巧手驱动
+- 五指触觉基线、接触检测、力度闭环与滑移保护
+- 一条服务命令自动执行完整水瓶抓放流程
 - PyQt 五指触觉热力图
-- RViz2 A7 Lite mesh 可视化
-- SocketCAN 双总线 bring-up 流程
+- A7 Lite mesh、桌面碰撞体和末端手部碰撞包围盒
+- rosbag 自动记录机械臂、灵巧手和触觉数据
 
-## Hardware Defaults
+## 系统架构
 
-| 项目 | 默认值 |
+```text
+                         +----------------------+
+                         |       MoveIt 2       |
+                         | planning + collision |
+                         +----------+-----------+
+                                    |
+                         FollowJointTrajectory
+                                    |
++-------------+ CAN0 +--------------v---------------+
+| A7 Lite arm | <--> | ros2_control + A7 C++ driver |
++-------------+      +------------------------------+
+
++-------------+ CAN1 +-------------------+     +------------------+
+| O6/L20 Lite | <--> | Linkerbot SDK hand | --> | tactile control  |
++-------------+      +-------------------+     +---------+--------+
+                                                         |
+                                               +---------v--------+
+                                               | water bottle task |
+                                               +------------------+
+```
+
+核心包：
+
+| 包 | 作用 |
 | --- | --- |
-| 系统 | Ubuntu 22.04 |
-| ROS | ROS2 Humble |
-| 机械臂 | 右臂 `A7lite` |
-| 灵巧手 | 右手 `O6`，可切换 `L20lite` |
-| Arm CAN | `can0`, 1 Mbps |
-| Hand CAN | `can1`, 1 Mbps |
-| 坐标系 | `maestro` |
+| `linker_a7_ros2_control` | A7 Lite CAN 协议、硬件接口和安全服务 |
+| `linker_manip_interfaces` | 自定义 message、service 和 action |
+| `linker_manipulation` | 手部驱动、MoveIt 配置、触觉抓取、Demo 和可视化 |
 
-## Repository Layout
+## 硬件与环境
+
+| 项目 | 当前默认值 |
+| --- | --- |
+| 操作系统 | Ubuntu 22.04 |
+| ROS 2 | Humble |
+| 机械臂 | A7 Lite 右臂，电机 ID `51..57` |
+| 灵巧手 | O6 右手，可切换 L20 Lite |
+| 机械臂 CAN | `can0`，1 Mbps |
+| 灵巧手 CAN | `can1`，1 Mbps |
+| 机械臂关节 | `R1_JOINT` 至 `R7_JOINT` |
+| 基坐标系 | `base_link` / SDK `maestro` |
+| TCP | `tcp_link` |
+
+仓库结构：
 
 ```text
 src/
-  linker_manip_interfaces/
-    msg/                 # TcpPose, HandState, tactile messages
-    srv/                 # SetHandAngles
-    action/              # MoveArm, Grasp
+  linker_a7_ros2_control/       # A7 Lite C++ ros2_control hardware
+  linker_manip_interfaces/      # ROS 2 messages, services, actions
   linker_manipulation/
-    config/robot.yaml
+    config/
+      robot.yaml                # 当前主配置，A7 Lite + O6
+      robot_o6.yaml
+      robot_l20lite.yaml
+      moveit/
+      ros2_control/
     launch/
-      bringup.launch.py
+      water_bottle_demo.launch.py
+      ros2_control_moveit.launch.py
       tactile_heatmap.launch.py
-      visualize.launch.py
-    linker_manipulation/
-      a7_driver_node.py
-      l20lite_driver_node.py   # generic hand driver entry, supports O6 / L20 Lite
-      grasp_controller_node.py
-      demo_task_node.py
-      tactile_heatmap_node.py
+    linker_manipulation/        # Python nodes
+    urdf/                       # A7 Lite mesh and collision model
     rviz/
-    urdf/
 ```
 
-## Quick Start
+## 快速开始
 
-### 1. Install Dependencies
+### 1. 安装依赖
 
 ```bash
 sudo apt-get update
@@ -71,30 +123,32 @@ sudo apt-get install -y \
   can-utils \
   python3-pip \
   python3-pyqt5 \
+  ros-humble-moveit \
   ros-humble-pinocchio
 ```
 
+安装 ROS 包依赖：
+
 ```bash
-python3 -m pip install --user python-can "pydantic>=2"
+cd ~/robot_dev
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
 ```
 
-A7/A7 Lite 需要 Linkerbot SDK 的 `kinetix` / Pinocchio 支持：
+安装 Linkerbot Python SDK。A7/A7 Lite 的 SDK 位姿接口需要 `kinetix` / Pinocchio：
 
 ```bash
-# 如果环境中可直接安装 SDK
-python3 -m pip install --user "linkerbot-py[kinetix]"
-
-# 或使用本地 SDK checkout
-export LINKERBOT_SDK_PATH=/path/to/linkerbot-python-sdk
-```
-
-检查 Pinocchio：
-
-```bash
+python3 -m pip install --user python-can "pydantic>=2" "linkerbot-py[kinetix]"
 python3 -c "import pinocchio; print(pinocchio.__version__)"
 ```
 
-### 2. Build
+也可以使用本地 SDK checkout：
+
+```bash
+export LINKERBOT_SDK_PATH=/path/to/linkerbot-python-sdk
+```
+
+### 2. 构建工作区
 
 ```bash
 cd ~/robot_dev
@@ -110,7 +164,9 @@ source /opt/ros/humble/setup.bash
 source ~/robot_dev/install/setup.bash
 ```
 
-### 3. Bring Up CAN
+### 3. 初始化 CAN
+
+建议先连接 CAN 适配器并配置接口，再给机械臂和灵巧手上电。
 
 ```bash
 sudo ip link set can0 down 2>/dev/null || true
@@ -124,14 +180,14 @@ sudo ip link set can1 txqueuelen 100
 sudo ip link set can1 up
 ```
 
-检查：
+检查接口：
 
 ```bash
 ip -details -statistics link show can0
 ip -details -statistics link show can1
 ```
 
-正常应看到：
+正常状态应包含：
 
 ```text
 state UP
@@ -140,290 +196,166 @@ bitrate 1000000
 qlen 100
 ```
 
-### 4. Launch
+### 4. 先做 mock 测试
+
+mock 模式不会连接真机，适合检查 URDF、控制器、MoveIt 和桌面碰撞模型：
 
 ```bash
-ros2 launch linker_manipulation bringup.launch.py
+ros2 launch linker_manipulation ros2_control_moveit.launch.py \
+  use_mock_hardware:=true \
+  allow_execution:=true
 ```
 
-正常日志：
+确认以下控制器为 `active`：
+
+```bash
+ros2 control list_controllers
+```
+
+### 5. 启动真机
+
+关闭 mock launch、旧的 `bringup.launch.py` 以及其他占用 `can0`/`can1` 的进程，
+然后启动完整水瓶 Demo 链路：
+
+```bash
+ros2 launch linker_manipulation water_bottle_demo.launch.py \
+  use_mock_hardware:=false
+```
+
+默认同时启动 RViz。无图形环境使用：
+
+```bash
+ros2 launch linker_manipulation water_bottle_demo.launch.py \
+  use_mock_hardware:=false \
+  use_rviz:=false
+```
+
+启动后检查：
+
+```bash
+ros2 control list_controllers
+ros2 topic hz /joint_states
+ros2 topic hz /linker/hand/tactile
+```
+
+预期结果：
+
+- `joint_state_broadcaster` 为 `active`
+- `a7_arm_controller` 为 `active`
+- `/joint_states` 持续更新
+- `/linker/hand/tactile` 约为 30 Hz
+
+## 水瓶 Demo
+
+### 工位准备
+
+1. 将水瓶放在示教时使用的固定位置。
+2. 确认桌面、机械臂和灵巧手模型与现场方向一致。
+3. 确保灵巧手未接触物体，便于动作开始时采集触觉基线。
+4. 清空机械臂到 `pregrasp` 路径附近的人员和物体。
+
+### 执行一次
+
+另开终端：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/robot_dev/install/setup.bash
+ros2 service call /linker/demo/run_once std_srvs/srv/Trigger {}
+```
+
+一次调用会自动完成：
 
 ```text
-Connected A7lite right arm on can0 (maestro frame).
-Connected O6 right hand on can1.
+open -> tactile baseline -> pregrasp -> grasp
+     -> close until contact -> force regulate
+     -> lift -> hold -> place -> release
 ```
 
-## Configuration
+中途取消：
 
-主配置文件：
-
-```text
-src/linker_manipulation/config/robot.yaml
+```bash
+ros2 service call /linker/demo/cancel std_srvs/srv/Trigger {}
 ```
 
-核心字段：
+接触物体后如果流程失败或取消，控制器会保持当前夹持，避免水瓶在半空松脱。
+先人工托住物体，再打开灵巧手：
+
+```bash
+ros2 service call /linker/hand/open std_srvs/srv/Trigger {}
+```
+
+`demo.record_bag: true` 时，每次运行都会在 `bags/` 下创建带时间戳的 rosbag。
+
+## 配置说明
+
+主配置文件为 [`src/linker_manipulation/config/robot.yaml`](src/linker_manipulation/config/robot.yaml)。
+
+### 机械臂和灵巧手
 
 ```yaml
 arm:
   type: A7lite
   side: right
   can: can0
-  world_frame: maestro
 
 hand:
   type: O6
   side: right
   can: can1
-  joint_count: 6
   tactile_shape: [10, 4]
-
-grasp:
-  active_fingers: [thumb, index, middle]
-  force_low: 20.0
-  force_high: 45.0
-  approach_mode: pose
-  approach_waypoints: [safe_above_table_pose]
-  poses:
-    safe_above_table_pose: [0.0, 0.20, -0.12, 1.85, 0.0, 1.57]
-    pregrasp_pose: [0.0, 0.30, -0.15, 1.85, 0.0, 1.57]
-    grasp_pose: [0.0, 0.30, -0.21, 1.85, 0.0, 1.57]
-    lift_pose: [0.0, 0.30, -0.12, 1.85, 0.0, 1.57]
-    place_pose: [0.10, 0.30, -0.18, 1.85, 0.0, 1.57]
 ```
 
-位姿格式：
+O6 与 L20 Lite 的默认差异：
 
-```text
-[x, y, z, rx, ry, rz]
-```
+| 型号 | 驱动关节数 | 单指触觉矩阵 | 配置文件 |
+| --- | ---: | ---: | --- |
+| O6 | 6 | `10x4` | `robot_o6.yaml` |
+| L20 Lite | 10 | `12x6` | `robot_l20lite.yaml` |
 
-- `x y z`：TCP 位置，单位米
-- `rx ry rz`：TCP 姿态，单位弧度
-- 当前默认坐标系为 `maestro`
-
-修改 `robot.yaml` 后，建议重建并重启 launch：
+切换到 L20 Lite：
 
 ```bash
-colcon build --symlink-install --packages-select linker_manipulation
-source install/setup.bash
+ros2 launch linker_manipulation water_bottle_demo.launch.py \
+  use_mock_hardware:=false \
+  config_path:=$HOME/robot_dev/src/linker_manipulation/config/robot_l20lite.yaml
 ```
 
-也可以直接指定源码里的配置文件：
+每个手型配置都独立保存张开角度、预抓角度、速度、扭矩和最大闭合角度。
 
-```bash
-ros2 launch linker_manipulation bringup.launch.py \
-  config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot.yaml
-```
+### MoveIt 关节目标
 
-切换手型：
-
-```bash
-# O6, 当前默认
-ros2 launch linker_manipulation bringup.launch.py \
-  config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot_o6.yaml
-
-# L20 Lite
-ros2 launch linker_manipulation bringup.launch.py \
-  config_path:=/home/chuanqi/robot_dev/src/linker_manipulation/config/robot_l20lite.yaml
-```
-
-## Basic Control
-
-查看主要话题：
-
-```bash
-ros2 topic list -t
-ros2 topic echo --once /linker/arm/tcp_pose
-ros2 topic echo --once /linker/hand/state
-ros2 topic echo --once /linker/hand/tactile
-```
-
-机械臂上使能和回零：
-
-```bash
-ros2 service call /linker/arm/enable std_srvs/srv/Trigger {}
-ros2 service call /linker/arm/home std_srvs/srv/Trigger {}
-```
-
-打开灵巧手：
-
-```bash
-ros2 service call /linker/hand/open std_srvs/srv/Trigger {}
-```
-
-急停：
-
-```bash
-ros2 service call /linker/arm/emergency_stop std_srvs/srv/Trigger {}
-```
-
-只测试 `pregrasp_pose`：
-
-```bash
-ros2 action send_goal /linker/arm/move_arm linker_manip_interfaces/action/MoveArm "{
-  mode: 1,
-  target_joints: [],
-  target_pose: {x: 0.0, y: 0.30, z: -0.18, rx: 1.85, ry: 0.0, rz: 1.57},
-  joint_velocities: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15],
-  joint_accelerations: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
-  max_velocity: 0.0,
-  max_angular_velocity: 0.0,
-  acceleration: 0.0,
-  angular_acceleration: 0.0
-}"
-```
-
-## Run Demo
-
-第一次运行请使用海绵、泡沫块、小纸盒等轻软物体，并确保急停可用。
-
-校准触觉基线：
-
-```bash
-ros2 service call /linker/grasp/calibrate_baseline std_srvs/srv/Trigger {}
-```
-
-执行一次抓取：
-
-```bash
-ros2 service call /linker/demo/run_once std_srvs/srv/Trigger {}
-```
-
-默认流程：
-
-```text
-enable -> home -> open -> calibrate baseline -> pregrasp
--> grasp -> close until contact -> force regulate
--> lift -> hold -> place -> release
-```
-
-## Tactile Heatmap
-
-启动硬件后，另开一个有图形界面的终端：
-
-```bash
-ros2 launch linker_manipulation tactile_heatmap.launch.py
-```
-
-窗口显示五个指尖触觉矩阵。O6 为 `10x4`，L20 Lite 为 `12x6`。
-
-| 字段 | 含义 |
-| --- | --- |
-| `msg #` | 收到的触觉消息数 |
-| `raw max` | SDK 原始触觉最大值 |
-| `view max` | 扣除基线后的显示最大值 |
-| `Delta` | 显示 `当前值 - 基线` |
-| `Set baseline` | 重新记录无接触基线 |
-| `Auto scale` | 自动调整颜色范围 |
-
-常用参数：
-
-```bash
-# 看原始值
-ros2 launch linker_manipulation tactile_heatmap.launch.py delta_mode:=false
-
-# 换配色并固定上限
-ros2 launch linker_manipulation tactile_heatmap.launch.py cmap:=turbo vmax:=80.0
-```
-
-如果按压手指时 `raw max` 不变，问题不在 GUI，而在触觉模块、SDK 轮询、CAN 接线或灵巧手供电链路。
-
-## RViz2 Visualization
-
-启动硬件：
-
-```bash
-ros2 launch linker_manipulation bringup.launch.py
-```
-
-启动 RViz2：
-
-```bash
-ros2 launch linker_manipulation visualize.launch.py
-```
-
-SSH 或无显示环境只发布 TF：
-
-```bash
-ros2 launch linker_manipulation visualize.launch.py use_rviz:=false
-```
-
-数据流：
-
-```text
-/linker/arm/state -> robot_state_publisher -> /tf -> rviz2
-```
-
-默认模型：
-
-```text
-src/linker_manipulation/urdf/a7_lite_right_mesh.urdf
-```
-
-## MoveIt2 Table Collision
-
-URDF 已内置桌子 collision box：
-
-```text
-center: x=0.70, y=0.0, z=-0.325
-size:   x=0.8, y=2.0, z=0.05
-top_z:  -0.30
-```
-
-URDF 同时包含一个临时末端手部碰撞包围盒：
-
-```text
-link:   hand_collision_proxy
-size:   x=0.12, y=0.10, z=0.18
-origin: tcp_link 下方 0.09m
-```
-
-这是 O6/L20 Lite 的保守近似模型，用来避免末端低空扫过桌面。拿到精确手部 URDF 后应替换为真实手模型，或按实测尺寸调整这个 proxy。
-
-启动 MoveIt2 规划/可视化：
-
-```bash
-ros2 launch linker_manipulation bringup.launch.py
-ros2 launch linker_manipulation moveit_table.launch.py
-```
-
-无图形界面只启动 `move_group` 和 TF：
-
-```bash
-ros2 launch linker_manipulation moveit_table.launch.py use_rviz:=false
-```
-
-允许 MoveIt2 将规划轨迹下发到 A7lite SDK 执行桥：
-
-```bash
-ros2 launch linker_manipulation bringup.launch.py
-ros2 launch linker_manipulation moveit_table.launch.py allow_execution:=true
-```
-
-推荐使用关节目标作为 MoveIt2 的 goal state。先把机械臂示教或移动到目标位姿，然后记录当前 7 个关节角：
-
-```bash
-ros2 run linker_manipulation joint_target_recorder_node --ros-args \
-  -p target_name:=pregrasp
-```
-
-把输出粘到 `robot.yaml` 的 `moveit.joint_targets` 下，例如：
+推荐使用示教得到的关节目标执行固定工位任务：
 
 ```yaml
 moveit:
+  velocity_scaling: 0.40
+  acceleration_scaling: 0.35
   joint_targets:
-    pregrasp: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    pregrasp: [...]
+    grasp: [...]
+    lift: [...]
+    place: [...]
 ```
 
-然后让 MoveIt2 规划到这个关节目标。默认只规划，不执行：
+| 目标 | 含义 |
+| --- | --- |
+| `pregrasp` | 水瓶上方或前方的安全预抓位置 |
+| `grasp` | 手指能够包围水瓶的抓取位置 |
+| `lift` | 抓稳后离开桌面的抬升位置 |
+| `place` | 放置水瓶的位置 |
+
+记录当前机械臂关节角：
 
 ```bash
-ros2 run linker_manipulation moveit_goal_node --ros-args \
-  -p goal_type:=joint \
-  -p joint_target_name:=pregrasp
+ros2 run linker_manipulation joint_target_recorder_node --ros-args \
+  -p joint_state_topic:=/joint_states \
+  -p target_name:=pregrasp
 ```
 
-确认 RViz 中轨迹安全后，再允许执行：
+将输出写入 `moveit.joint_targets`，再分别记录 `grasp`、`lift` 和 `place`。
+
+单独规划并执行一个目标：
 
 ```bash
 ros2 run linker_manipulation moveit_goal_node --ros-args \
@@ -432,118 +364,210 @@ ros2 run linker_manipulation moveit_goal_node --ros-args \
   -p execute:=true
 ```
 
-`moveit_goal_node` 也支持 `goal_type:=pose`，可以直接读取 `robot.yaml` 里的 `pregrasp_pose` 等 TCP 位姿；但 Pose goal 依赖 URDF/KDL IK 和坐标系语义完全一致，调试初期不如关节目标稳定。
+`velocity_scaling` 和 `acceleration_scaling` 是 MoveIt 轨迹比例。调整后需要重启
+launch；使用 `--symlink-install` 时，修改现有 YAML 不需要重新构建。
 
-这个 launch 会启动：
+### 触觉闭环
 
-- `robot_state_publisher`
-- `move_group`
-- 可选 `rviz2`
-- MoveIt controller `linker_arm_controller`
-
-并将 MoveIt 的 `joint_states` remap 到：
-
-```text
-/linker/arm/state
+```yaml
+grasp:
+  active_fingers: [thumb, index, middle]
+  baseline_samples: 10
+  contact_threshold: 12.0
+  force_low: 20.0
+  force_high: 45.0
+  hold_sec: 5.0
+  slip_drop_ratio: 0.30
 ```
 
-默认 `allow_trajectory_execution=false`，只做规划和碰撞检查；显式设置 `allow_execution:=true` 后，MoveIt 会通过标准 `FollowJointTrajectory` action：
+- 基线：无接触时连续采样，用于扣除传感器零点偏差
+- 接触：指尖分数超过 `contact_threshold`
+- 调力：触觉低于 `force_low` 时继续闭合，高于 `force_high` 时小幅张开
+- 滑移：抬升或保持阶段触觉下降超过 `slip_drop_ratio` 时补偿或中止
+
+### 桌面碰撞模型
+
+当前 URDF 内置桌面：
 
 ```text
-/linker_arm_controller/follow_joint_trajectory
+center: x=0.70, y=0.0, z=-0.325
+size:   x=0.8,  y=2.0, z=0.05
+top_z:  -0.30
 ```
 
-把关节轨迹交给 `a7_driver_node`，再由 driver 调用 SDK `move_j`。默认执行桥会把 MoveIt 的密集轨迹抽稀成关键 waypoint，避免真机在每个采样点反复停顿：
+末端还包含 `0.12 x 0.10 x 0.18 m` 的保守手部碰撞包围盒。
+实际桌面或手部尺寸变化后，必须同步修改
+[`a7_lite_right_mesh.urdf`](src/linker_manipulation/urdf/a7_lite_right_mesh.urdf)。
 
-```text
-trajectory_execution_mode: sparse
-trajectory_min_waypoint_delta: 0.06
-trajectory_max_waypoints: 25
-trajectory_joint_velocity: 0.20
-trajectory_joint_acceleration: 1.0
-```
+## 调试工具
 
-如果需要最严格贴合 MoveIt 轨迹，可把 `trajectory_execution_mode` 设为 `all`，但真机可能出现明显停顿；如果只想最顺滑地到目标，可设为 `final`，但会弱化 MoveIt 路径避障约束。第一次真机执行前请保持低速、手在急停附近，并先在 RViz 中确认整条轨迹不穿过桌子或自身模型。
+### 触觉热力图
 
-## ros2_control Trajectory Controller
-
-仓库提供 A7 Lite 原生 C++ SocketCAN `hardware_interface`，MoveIt 轨迹由
-`joint_trajectory_controller` 以 100 Hz 连续下发，不再把每个轨迹点转换成一次阻塞
-`move_j`。
-
-先用 mock 检查规划、碰撞和控制器链路，不会驱动真机：
+硬件驱动运行后，在有图形界面的终端执行：
 
 ```bash
-ros2 launch linker_manipulation ros2_control_moveit.launch.py allow_execution:=true
+ros2 launch linker_manipulation tactile_heatmap.launch.py
 ```
 
-确认规划无碰撞后，关闭 `bringup.launch.py` 和所有占用机械臂 CAN 的进程，再启动真机：
+查看原始值：
+
+```bash
+ros2 launch linker_manipulation tactile_heatmap.launch.py delta_mode:=false
+```
+
+固定颜色范围：
+
+```bash
+ros2 launch linker_manipulation tactile_heatmap.launch.py \
+  auto_scale:=false cmap:=turbo vmax:=80.0
+```
+
+### 单独测试机械臂控制链路
+
+只启动 A7 Lite、MoveIt 和 `ros2_control`：
 
 ```bash
 ros2 launch linker_manipulation ros2_control_moveit.launch.py \
   use_mock_hardware:=false \
-  can_interface:=can0 \
-  arm_side:=right \
-  velocity_limit:=5.0 \
-  acceleration_limit:=20.0 \
   allow_execution:=true
 ```
 
-真机模式会连接右臂电机 `51..57`、启动主动状态上报、使能电机并启动：
+### SDK 直连调试
 
-- `controller_manager`
-- `joint_state_broadcaster`
-- `a7_arm_controller`
-- MoveIt controller `/a7_arm_controller/follow_joint_trajectory`
-- 安全服务 `/linker/arm/emergency_stop` 和 `/linker/arm/disable`
-
-急停服务会直接失能 7 个电机；触发后必须重启 `ros2_control` 才能再次执行：
+`bringup.launch.py` 保留用于 SDK 驱动、`MoveArm.action` 和 TCP 位姿调试：
 
 ```bash
-ros2 service call /linker/arm/emergency_stop std_srvs/srv/Trigger {}
+ros2 launch linker_manipulation bringup.launch.py
 ```
 
-通信协议与电机状态换算对齐
-[`linkerbot-python-sdk` 0.5.4](https://github.com/linker-bot/linkerbot-python-sdk)；厂商
-`linkerhand-tele-arm` 是示教臂只读驱动，不包含 A7 Lite 位置控制接口，因此未直接作为
-硬件插件使用。`velocity_limit` 和 `acceleration_limit` 是电机跟踪上限，保留余量可避免每个
-10 ms 目标被电机内部梯形规划截断；实际轨迹速度由 MoveIt 限位和
-`velocity_scaling`/`acceleration_scaling` 决定，当前目标节点默认均为 `0.15`。第一次真机
-测试请保持桌面净空并随时准备物理断电。C++ CAN 层按厂商 Python SDK 的节拍限制发送，
-并在 SocketCAN 发送队列暂满时等待重试；CAN 初始化时仍建议把 `txqueuelen` 设为 `100`。
+> [!IMPORTANT]
+> SDK `bringup.launch.py` 与原生 `ros2_control` 都会占用机械臂 CAN，不能同时运行。
+> 完整水瓶 Demo 应使用 `water_bottle_demo.launch.py`。
 
-## Public Interfaces
+SDK 模式下可调用：
 
-主要话题：
+```bash
+ros2 service call /linker/arm/enable std_srvs/srv/Trigger {}
+ros2 service call /linker/arm/home std_srvs/srv/Trigger {}
+ros2 topic echo --once /linker/arm/tcp_pose
+```
 
-| Topic | Type |
-| --- | --- |
-| `/linker/arm/state` | `sensor_msgs/msg/JointState` |
-| `/linker/arm/tcp_pose` | `linker_manip_interfaces/msg/TcpPose` |
-| `/linker/hand/state` | `linker_manip_interfaces/msg/HandState` |
-| `/linker/hand/tactile` | `linker_manip_interfaces/msg/HandTactile` |
+### 测试
 
-主要服务：
+```bash
+cd ~/robot_dev
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+colcon test --packages-select \
+  linker_a7_ros2_control \
+  linker_manip_interfaces \
+  linker_manipulation
+colcon test-result --verbose
+```
 
-- `/linker/arm/enable`
-- `/linker/arm/disable`
-- `/linker/arm/home`
-- `/linker/arm/emergency_stop`
-- `/linker/hand/open`
-- `/linker/hand/set_angles`
-- `/linker/grasp/calibrate_baseline`
-- `/linker/demo/run_once`
+## ROS 2 接口
 
-主要 action：
+### Topics
 
-- `/linker/arm/move_arm`
-- `/linker/grasp/grasp`
+| Topic | Type | 说明 |
+| --- | --- | --- |
+| `/joint_states` | `sensor_msgs/msg/JointState` | ros2_control 机械臂关节状态 |
+| `/a7_arm_controller/controller_state` | `control_msgs/msg/JointTrajectoryControllerState` | 轨迹跟踪状态 |
+| `/linker/arm/state` | `sensor_msgs/msg/JointState` | SDK 模式机械臂状态 |
+| `/linker/arm/tcp_pose` | `linker_manip_interfaces/msg/TcpPose` | SDK 模式 TCP 位姿 |
+| `/linker/hand/state` | `linker_manip_interfaces/msg/HandState` | 灵巧手角度、速度和扭矩 |
+| `/linker/hand/tactile` | `linker_manip_interfaces/msg/HandTactile` | 五指触觉矩阵和分数 |
 
-## Troubleshooting
+### Services
+
+| Service | Type | 说明 |
+| --- | --- | --- |
+| `/linker/demo/run_once` | `std_srvs/srv/Trigger` | 执行一次完整 Demo |
+| `/linker/demo/cancel` | `std_srvs/srv/Trigger` | 取消当前 Demo |
+| `/linker/grasp/calibrate_baseline` | `std_srvs/srv/Trigger` | 重新采集触觉基线 |
+| `/linker/hand/open` | `std_srvs/srv/Trigger` | 打开灵巧手 |
+| `/linker/hand/set_angles` | `linker_manip_interfaces/srv/SetHandAngles` | 设置手指角度 |
+| `/linker/arm/emergency_stop` | `std_srvs/srv/Trigger` | 立即失能机械臂电机 |
+| `/linker/arm/disable` | `std_srvs/srv/Trigger` | 失能机械臂电机 |
+
+### Actions
+
+| Action | Type | 说明 |
+| --- | --- | --- |
+| `/linker/grasp` | `linker_manip_interfaces/action/Grasp` | 触觉抓取状态机 |
+| `/linker/arm/move_arm` | `linker_manip_interfaces/action/MoveArm` | SDK 模式关节、Pose 和直线运动 |
+| `/a7_arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | ros2_control 轨迹执行 |
+
+## 常见问题
+
+### A7 Lite 电机无响应
+
+典型日志：
+
+```text
+Motors [51, 52, 53, 54, 55, 56, 57] did not respond
+```
+
+依次检查机械臂供电、急停、CAN 接口对应关系和接收计数：
+
+```bash
+ip -details -statistics link show can0
+```
+
+若 `TX` 增长而 `RX` 始终为 `0`，优先检查机械臂供电、CAN-H/CAN-L、终端电阻和适配器接线。
+
+### 找不到 controller_manager
+
+```text
+Could not contact service /controller_manager/list_controllers
+```
+
+说明 `ros2_control_node` 未启动或已经退出。查看启动终端中的第一条错误，并确认没有
+其他进程占用 `can0`。
+
+### MoveIt 规划失败
+
+确认关节状态持续发布：
+
+```bash
+ros2 topic hz /joint_states
+```
+
+然后检查目标关节角是否在限位内、目标或路径是否与桌面碰撞，以及机械臂当前状态是否
+与 RViz 一致。固定工位优先使用 `moveit.joint_targets`，Pose goal 仅用于运动学和 TCP
+已经准确标定的场景。
+
+### 机械臂运动过慢
+
+调整 `robot.yaml`：
+
+```yaml
+moveit:
+  velocity_scaling: 0.40
+  acceleration_scaling: 0.35
+```
+
+这两个值决定 MoveIt 生成轨迹的实际速度比例。修改后重启 launch 生效。
+
+### 热力图没有响应
+
+先检查消息频率和原始数据：
+
+```bash
+ros2 topic hz /linker/hand/tactile
+ros2 topic echo --once /linker/hand/tactile
+```
+
+如果消息持续到达但按压时原始值不变，问题位于触觉硬件、SDK 轮询、CAN 或供电链路，
+不是热力图界面。窗口无法打开时检查：
+
+```bash
+echo $DISPLAY
+```
 
 ### 自定义消息类型 invalid
 
-通常是终端没有 source 工作区：
+重新加载工作区并刷新 ROS 2 daemon：
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -552,77 +576,30 @@ ros2 daemon stop
 ros2 daemon start
 ```
 
-### A7/A7 Lite motors did not respond
+## 安全说明
 
-典型日志：
-
-```text
-Motors [51, 52, 53, 54, 55, 56, 57] did not respond
-```
-
-检查：
-
-- 机械臂电源和急停
-- `robot.yaml` 中的 `arm.type`、`arm.side`、`arm.can`
-- 机械臂是否确实接在 `can0`
-- `ip -details -statistics link show can0`
-
-### 触觉热力图没反应
-
-先看 topic 是否在发布：
-
-```bash
-ros2 topic hz /linker/hand/tactile
-```
-
-再打印五指统计值：
-
-```bash
-python3 - <<'PY'
-import rclpy
-from linker_manip_interfaces.msg import HandTactile
-
-rclpy.init()
-node = rclpy.create_node("tactile_probe")
-
-def cb(msg):
-    parts = []
-    for f in msg.fingers:
-        vals = list(f.values)
-        parts.append(f"{f.finger}: score={f.score:.1f}, max={max(vals)}, mean={sum(vals)/len(vals):.1f}")
-    print(" | ".join(parts), flush=True)
-
-node.create_subscription(HandTactile, "/linker/hand/tactile", cb, 10)
-rclpy.spin(node)
-PY
-```
-
-如果按压指尖时 `max` 不变，说明底层触觉数据没有变化，优先检查触觉硬件、SDK 轮询、CAN 和供电。
-
-### Demo 路线不自然
-
-- `demo.enable_and_home: true` 会在 demo 前调用 SDK `arm.home()`
-- `home_pose` 目前只是 YAML 参考位姿，不会覆盖 `arm.home()`
-- `grasp.approach_mode: pose` 使用 `move_p`
-- `grasp.approach_mode: linear` 使用 `move_l`
-- 如需更自然的路线，可在 `grasp.approach_waypoints` 增加安全中间位姿
-
-## Safety
-
-- 首次运行只抓轻软物体
-- 调 pose 时降低速度，先高后低
-- 确保急停和机械臂活动空间安全
-- 运行 `/linker/demo/run_once` 前清空工作区
-- 当前 `tcp_offset` 为 `[0, 0, 0]`，精细操作前需要标定手爪相对法兰的 TCP
+- 首次执行只使用轻软物体，速度从低到高逐步调整
+- 真机启动前确认 `use_mock_hardware:=false` 是有意操作
+- 不要同时运行两个占用同一 CAN 接口的驱动
+- 执行前在 RViz 中确认整条路径不穿过桌面和机械臂自身
+- `/linker/arm/emergency_stop` 会直接失能 7 个电机，触发后应重启真机控制链路
+- 当前手部碰撞体是保守包围盒，精细操作前应替换为准确手部 URDF
+- 当前 `tcp_offset` 为零，翻书、插卡、拧灯泡前必须完成 TCP 标定
 
 ## Roadmap
 
-- 示教工具：保存当前 `/linker/arm/tcp_pose` 到 YAML
-- 灵巧手抓取中心 TCP 标定
-- rosbag 记录与触觉曲线分析
-- MoveIt2 和碰撞模型集成
-- 翻书、插卡、拧灯泡任务模板
+- 水瓶碰撞体附着与放置场景更新
+- TCP 和手眼标定工具
+- 视觉定位与抓取目标自动生成
+- 翻书任务原语
+- 卡片对孔与柔顺插入
+- 灯泡旋拧与触觉滑移控制
+
+## 致谢
+
+本项目基于 [Linkerbot Python SDK](https://github.com/linker-bot/linkerbot-python-sdk)
+开发，并使用 [linker-bot](https://github.com/linker-bot) 公开仓库中的机械臂模型和协议资料。
 
 ## License
 
-Apache-2.0, as declared by the ROS package manifests.
+ROS 包清单声明为 Apache-2.0。
