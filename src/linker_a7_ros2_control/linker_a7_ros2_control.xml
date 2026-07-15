@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<library path="linker_a7_ros2_control">
+  <class
+    name="linker_a7_ros2_control/A7LiteSystem"
+    type="linker_a7_ros2_control::A7LiteSystem"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>SocketCAN position hardware interface for a seven-axis Linker A7 Lite arm.</description>
+  </class>
+</library>

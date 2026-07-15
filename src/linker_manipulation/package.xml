@@ -15,6 +15,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>linker_a7_ros2_control</exec_depend>
   <exec_depend>linker_manip_interfaces</exec_depend>
   <exec_depend>moveit_kinematics</exec_depend>
   <exec_depend>moveit_planners_ompl</exec_depend>

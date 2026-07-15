@@ -115,10 +115,12 @@ source ~/robot_dev/install/setup.bash
 ```bash
 sudo ip link set can0 down 2>/dev/null || true
 sudo ip link set can0 type can bitrate 1000000
+sudo ip link set can0 txqueuelen 100
 sudo ip link set can0 up
 
 sudo ip link set can1 down 2>/dev/null || true
 sudo ip link set can1 type can bitrate 1000000
+sudo ip link set can1 txqueuelen 100
 sudo ip link set can1 up
 ```
 
@@ -135,6 +137,7 @@ ip -details -statistics link show can1
 state UP
 can state ERROR-ACTIVE
 bitrate 1000000
+qlen 100
 ```
 
 ### 4. Launch
@@ -464,20 +467,50 @@ trajectory_joint_acceleration: 1.0
 
 ## ros2_control Trajectory Controller
 
-仓库同时提供标准 `ros2_control` 链路，用于接入 `joint_trajectory_controller`：
+仓库提供 A7 Lite 原生 C++ SocketCAN `hardware_interface`，MoveIt 轨迹由
+`joint_trajectory_controller` 以 100 Hz 连续下发，不再把每个轨迹点转换成一次阻塞
+`move_j`。
+
+先用 mock 检查规划、碰撞和控制器链路，不会驱动真机：
 
 ```bash
 ros2 launch linker_manipulation ros2_control_moveit.launch.py allow_execution:=true
 ```
 
-这条链路会启动：
+确认规划无碰撞后，关闭 `bringup.launch.py` 和所有占用机械臂 CAN 的进程，再启动真机：
+
+```bash
+ros2 launch linker_manipulation ros2_control_moveit.launch.py \
+  use_mock_hardware:=false \
+  can_interface:=can0 \
+  arm_side:=right \
+  velocity_limit:=5.0 \
+  acceleration_limit:=20.0 \
+  allow_execution:=true
+```
+
+真机模式会连接右臂电机 `51..57`、启动主动状态上报、使能电机并启动：
 
 - `controller_manager`
 - `joint_state_broadcaster`
 - `a7_arm_controller`
 - MoveIt controller `/a7_arm_controller/follow_joint_trajectory`
+- 安全服务 `/linker/arm/emergency_stop` 和 `/linker/arm/disable`
 
-当前 URDF 中的 `<ros2_control>` 使用 `mock_components/GenericSystem`，适合验证 MoveIt -> `joint_trajectory_controller` 的标准轨迹接口和 RViz 执行流程，不会驱动真实 A7lite。真实硬件层建议基于 linker-bot 的 `linkerhand-tele-arm` C++ 代码实现 `hardware_interface::SystemInterface`，把 `read()` 映射到 A7 关节状态，把 `write()` 映射到 A7 CAN/SDK 位置命令。
+急停服务会直接失能 7 个电机；触发后必须重启 `ros2_control` 才能再次执行：
+
+```bash
+ros2 service call /linker/arm/emergency_stop std_srvs/srv/Trigger {}
+```
+
+通信协议与电机状态换算对齐
+[`linkerbot-python-sdk` 0.5.4](https://github.com/linker-bot/linkerbot-python-sdk)；厂商
+`linkerhand-tele-arm` 是示教臂只读驱动，不包含 A7 Lite 位置控制接口，因此未直接作为
+硬件插件使用。`velocity_limit` 和 `acceleration_limit` 是电机跟踪上限，保留余量可避免每个
+10 ms 目标被电机内部梯形规划截断；实际轨迹速度由 MoveIt 限位和
+`velocity_scaling`/`acceleration_scaling` 决定，当前目标节点默认均为 `0.15`。第一次真机
+测试请保持桌面净空并随时准备物理断电。C++ CAN 层按厂商 Python SDK 的节拍限制发送，
+并在 SocketCAN 发送队列暂满时等待重试；CAN 初始化时仍建议把 `txqueuelen` 设为 `100`。
 
 ## Public Interfaces
 
