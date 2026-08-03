@@ -43,6 +43,7 @@ pregrasp -> grasp -> tactile contact -> force regulate
 - 五指触觉基线、接触检测、力度闭环与滑移保护
 - 一条服务命令自动执行完整水瓶抓放流程
 - PyQt 五指触觉热力图
+- iPhone OctoStream RTSP 相机接入
 - A7 Lite mesh、桌面碰撞体和末端手部碰撞包围盒
 - rosbag 自动记录机械臂、灵巧手和触觉数据
 
@@ -107,6 +108,7 @@ src/
     launch/
       water_bottle_demo.launch.py
       ros2_control_moveit.launch.py
+      iphone_camera.launch.py
       tactile_heatmap.launch.py
     linker_manipulation/        # Python nodes
     urdf/                       # A7 Lite mesh and collision model
@@ -401,6 +403,52 @@ top_z:  -0.30
 
 ## 调试工具
 
+### iPhone RTSP 相机
+
+确认 Ubuntu 虚拟机已连接 iPhone 热点，并在 OctoStream 中启动视频流。默认地址：
+
+```text
+rtsp://172.20.10.1:554/stream
+```
+
+启动 ROS 2 相机节点：
+
+```bash
+ros2 launch linker_manipulation iphone_camera.launch.py
+```
+
+发布的话题：
+
+| Topic | Type |
+| --- | --- |
+| `/iphone_camera/image_raw` | `sensor_msgs/msg/Image` |
+| `/iphone_camera/camera_info` | `sensor_msgs/msg/CameraInfo` |
+
+检查图像：
+
+```bash
+ros2 topic hz /iphone_camera/image_raw
+ros2 topic echo --once /iphone_camera/camera_info
+ros2 run rqt_image_view rqt_image_view /iphone_camera/image_raw
+```
+
+当前 OctoStream 视频为竖屏 `720x1280`、30 FPS。如需顺时针旋转为横屏：
+
+```bash
+ros2 launch linker_manipulation iphone_camera.launch.py rotation_degrees:=90
+```
+
+虚拟机 CPU 或 DDS 带宽不足时，可以降低发布分辨率和帧率：
+
+```bash
+ros2 launch linker_manipulation iphone_camera.launch.py \
+  resize_width:=360 resize_height:=640 publish_rate_hz:=15.0
+```
+
+节点只保留最新视频帧，并在 RTSP 断开后自动重连。未提供 `camera_info_url` 时会发布
+未标定的 `CameraInfo`；用于视觉测量和机械臂定位前，需要完成相机内参和手眼标定。
+标定前应先确定最终的旋转角度和发布分辨率，标定后不要再改变这两个参数。
+
 ### 触觉热力图
 
 硬件驱动运行后，在有图形界面的终端执行：
@@ -477,6 +525,8 @@ colcon test-result --verbose
 | `/linker/arm/tcp_pose` | `linker_manip_interfaces/msg/TcpPose` | SDK 模式 TCP 位姿 |
 | `/linker/hand/state` | `linker_manip_interfaces/msg/HandState` | 灵巧手角度、速度和扭矩 |
 | `/linker/hand/tactile` | `linker_manip_interfaces/msg/HandTactile` | 五指触觉矩阵和分数 |
+| `/iphone_camera/image_raw` | `sensor_msgs/msg/Image` | iPhone RTSP 原始图像 |
+| `/iphone_camera/camera_info` | `sensor_msgs/msg/CameraInfo` | iPhone 相机内参与分辨率 |
 
 ### Services
 

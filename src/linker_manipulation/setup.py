@@ -38,6 +38,7 @@ setup(
             "joint_target_recorder_node = linker_manipulation.joint_target_recorder_node:main",
             "moveit_goal_node = linker_manipulation.moveit_pose_goal_node:main",
             "moveit_pose_goal_node = linker_manipulation.moveit_pose_goal_node:main",
+            "rtsp_camera_node = linker_manipulation.rtsp_camera_node:main",
             "tactile_heatmap_node = linker_manipulation.tactile_heatmap_node:main",
         ],
     },
