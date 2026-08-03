@@ -44,6 +44,7 @@ pregrasp -> grasp -> tactile contact -> force regulate
 - 一条服务命令自动执行完整水瓶抓放流程
 - PyQt 五指触觉热力图
 - iPhone OctoStream RTSP 相机接入
+- iPhone 单目内参和固定相机 eye-to-hand 标定
 - A7 Lite mesh、桌面碰撞体和末端手部碰撞包围盒
 - rosbag 自动记录机械臂、灵巧手和触觉数据
 
@@ -109,6 +110,9 @@ src/
       water_bottle_demo.launch.py
       ros2_control_moveit.launch.py
       iphone_camera.launch.py
+      iphone_intrinsic_calibration.launch.py
+      iphone_hand_eye_calibration.launch.py
+      iphone_calibrated_camera.launch.py
       tactile_heatmap.launch.py
     linker_manipulation/        # Python nodes
     urdf/                       # A7 Lite mesh and collision model
@@ -448,6 +452,145 @@ ros2 launch linker_manipulation iphone_camera.launch.py \
 节点只保留最新视频帧，并在 RTSP 断开后自动重连。未提供 `camera_info_url` 时会发布
 未标定的 `CameraInfo`；用于视觉测量和机械臂定位前，需要完成相机内参和手眼标定。
 标定前应先确定最终的旋转角度和发布分辨率，标定后不要再改变这两个参数。
+
+### iPhone 单目手眼标定
+
+当前工具按 **eye-to-hand** 配置：iPhone 固定在机械臂外部，求解
+`base_link -> iphone_camera_optical_frame`。整个流程使用同一块 ChArUco 标定板。
+
+> [!IMPORTANT]
+> OctoStream 必须始终使用同一个镜头、分辨率、旋转角度和缩放比例。标定完成后移动
+> iPhone、切换镜头、改变数字变焦或改变 `rotation_degrees` / `resize_*`，都需要重新标定。
+
+#### 1. 打印标定板
+
+生成默认 `7x5` ChArUco 板：方格边长 `30 mm`，标记边长 `22 mm`。
+
+```bash
+mkdir -p ~/robot_dev/calibration
+ros2 run linker_manipulation charuco_board_generator \
+  --output ~/robot_dev/calibration/charuco_7x5_30mm.pdf
+```
+
+打印时选择 **A4 横向、实际大小/100%、关闭适应页面**。打印后用尺确认任意方格边长
+为 `30.0 mm`，再粘到平整、不会弯曲的硬板上。
+
+#### 2. 标定 iPhone 内参
+
+此阶段标定板可以手持，机械臂不需要启动。
+
+```bash
+ros2 launch linker_manipulation iphone_intrinsic_calibration.launch.py \
+  rotation_degrees:=0
+```
+
+可选：查看角点检测画面。缺少工具时先安装 `ros-humble-rqt-image-view`。
+
+```bash
+ros2 run rqt_image_view rqt_image_view \
+  /iphone_calibration/intrinsics/debug_image
+```
+
+让标定板依次出现在画面中央、四角、近处、远处，并改变俯仰和偏航角。每次保持清晰、
+静止后采集一次，建议采集 `20~30` 组：
+
+```bash
+ros2 service call /iphone_calibration/intrinsics/capture \
+  std_srvs/srv/Trigger {}
+```
+
+采集完成后求解：
+
+```bash
+ros2 service call /iphone_calibration/intrinsics/solve \
+  std_srvs/srv/Trigger {}
+```
+
+成功后内参保存为：
+
+```text
+~/.ros/camera_info/iphone_15_pro.yaml
+```
+
+建议 RMS 小于 `1.0 px`；程序允许的上限为 `1.5 px`。失败时清空样本重新采集：
+
+```bash
+ros2 service call /iphone_calibration/intrinsics/reset \
+  std_srvs/srv/Trigger {}
+```
+
+#### 3. 标定相机到 `base_link`
+
+将 iPhone 刚性固定在工位上。再将标定板刚性固定到机械臂末端，整个采集过程中标定板
+不能相对 `tcp_link` 滑动。标定板与 `tcp_link` 之间的具体偏移不需要手工测量。
+
+终端 1 启动真机控制和 TF：
+
+```bash
+ros2 launch linker_manipulation ros2_control_moveit.launch.py \
+  use_mock_hardware:=false \
+  allow_execution:=true
+```
+
+终端 2 启动相机和 eye-to-hand 标定节点：
+
+```bash
+ros2 launch linker_manipulation iphone_hand_eye_calibration.launch.py \
+  rotation_degrees:=0
+```
+
+通过 RViz 或 MoveIt 将机械臂移动到 `12~20` 个不同姿态。每个姿态都要满足：
+
+- 标定板完整出现在相机画面内，角点清晰
+- 机械臂完全停止后等待约 1 秒再采集
+- 位置覆盖约 `10~20 cm`，朝向绕至少两个轴变化 `20~40 deg`
+- iPhone 和标定板安装位置全程不变
+
+每个姿态调用一次：
+
+```bash
+ros2 service call /iphone_calibration/hand_eye/capture \
+  std_srvs/srv/Trigger {}
+```
+
+完成后求解：
+
+```bash
+ros2 service call /iphone_calibration/hand_eye/solve \
+  std_srvs/srv/Trigger {}
+```
+
+成功后外参保存为：
+
+```text
+~/.ros/camera_info/iphone_to_base.yaml
+```
+
+程序默认要求平移一致性 RMS 小于 `30 mm`、旋转一致性 RMS 小于 `3 deg`。结果不合格时：
+
+```bash
+ros2 service call /iphone_calibration/hand_eye/reset \
+  std_srvs/srv/Trigger {}
+```
+
+#### 4. 使用标定结果
+
+后续使用下面的 launch 同时加载内参和静态 TF：
+
+```bash
+ros2 launch linker_manipulation iphone_calibrated_camera.launch.py \
+  rotation_degrees:=0
+```
+
+检查内参和 TF：
+
+```bash
+ros2 topic echo --once /iphone_camera/camera_info
+ros2 run tf2_ros tf2_echo base_link iphone_camera_optical_frame
+```
+
+移动标定板到多个已知位置进行验证。用于抓取前，建议桌面附近的三维定位误差控制在
+`10~20 mm` 以内；若误差随距离或画面位置明显变化，优先重新做内参标定。
 
 ### 触觉热力图
 

@@ -1,0 +1,6 @@
+squares_x: 7
+squares_y: 5
+square_length_m: 0.03
+marker_length_m: 0.022
+dictionary: DICT_4X4_50
+print: A4 landscape, actual size / 100%, no fit-to-page
